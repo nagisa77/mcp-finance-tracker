@@ -1,0 +1,41 @@
+services:
+  mysql:
+    image: mysql:8.3
+    container_name: finance_mysql
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpassword
+      MYSQL_DATABASE: finance_db
+      MYSQL_USER: finance_user
+      MYSQL_PASSWORD: finance_password
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./init_db.sql:/docker-entrypoint-initdb.d/init_db.sql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  mcp_server:
+    build: .
+    container_name: finance_mcp_server
+    restart: always
+    depends_on:
+      mysql:
+        condition: service_healthy
+    environment:
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_USER: finance_user
+      DB_PASSWORD: finance_password
+      DB_NAME: finance_db
+    command: python mcp_server.py
+    ports:
+      - "8000:8000"
+
+volumes:
+  mysql_data:
+
