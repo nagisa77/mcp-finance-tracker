@@ -42,7 +42,7 @@ Compose 会启动两个服务：
 
 ### MCP 工具说明
 
-服务启动后，可在 MCP 兼容客户端中注册 `app` 服务对应的工具。
+服务启动后，可在 MCP 兼容客户端中注册 `finance_tracker` 服务对应的工具。
 
 #### `list_category_tool`
 
@@ -76,7 +76,7 @@ export DB_HOST=127.0.0.1
 export DB_USER=finance
 export DB_PASSWORD=financepass
 export DB_NAME=finance_tracker
-python -m app
+python -m finance_tracker
 ```
 
 确保本地 MySQL 实例已启动且对应数据库、用户配置正确。
