@@ -7,7 +7,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-EXPOSE 8888
+EXPOSE 8000
 
 CMD ["python", "-m", "mcp.mcp_server"]
 

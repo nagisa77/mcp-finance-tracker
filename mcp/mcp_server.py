@@ -26,7 +26,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-mcp = FastMCP("记账服务", host="0.0.0.0", port=8888)
+mcp = FastMCP("记账服务", host="0.0.0.0", port=8000)
 
 
 @mcp.tool(

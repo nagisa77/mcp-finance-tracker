@@ -30,7 +30,7 @@ docker-compose up -d mysql
 
 # 3. 配置环境变量（可选，默认会使用 Docker Compose 中的配置）
 export DB_HOST=localhost
-export DB_PORT=4406
+export DB_PORT=3306
 export DB_USER=finance_user
 export DB_PASSWORD=finance_password
 export DB_NAME=finance_db
@@ -43,7 +43,7 @@ python -m mcp.mcp_server
 
 默认配置：
 - **主机**: `mysql`（Docker） 或 `localhost`（本地）
-- **端口**: `4406`
+- **端口**: `3306`
 - **数据库**: `finance_db`
 - **用户名**: `finance_user`
 - **密码**: `finance_password`
