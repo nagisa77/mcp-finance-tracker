@@ -96,8 +96,7 @@ async def record_bill(
                     category_display = f"未知分类：{bill_data.category}"
 
             bill = create_bill(session, bill_data, category_obj)
-
-        bill_model = BillRead.model_validate(bill)
+            bill_model = BillRead.model_validate(bill)
         return BillRecordResult(
             message="💾 账单记录成功！",
             category_display=category_display,
