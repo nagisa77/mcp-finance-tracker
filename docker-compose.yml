@@ -17,7 +17,9 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
-
+    networks:
+      - finance-network
+      
   mcp_server:
     build: .
     container_name: finance_mcp_server
@@ -34,6 +36,12 @@ services:
     command: python -m mcp.mcp_server
     ports:
       - "8888:8888"
-
+    networks:
+      - finance-network
 volumes:
   mysql_data:
+
+networks:
+  finance-network:
+    name: finance-network
+    driver: bridge
