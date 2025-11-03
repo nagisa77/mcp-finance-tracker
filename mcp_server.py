@@ -1,9 +1,9 @@
 """记账 MCP 服务端."""
 import logging
-from typing import Optional
+from typing import Annotated
 
-from mcp.server.fastmcp import FastMCP
-from pydantic import ValidationError
+from mcp.server.fastmcp import Context, FastMCP
+from pydantic import Field as PydanticField, ValidationError
 
 from crud import (
     create_bill,
@@ -12,7 +12,13 @@ from crud import (
     list_categories,
 )
 from database import init_database, session_scope
-from schemas import BillCreate
+from schemas import (
+    BillCreate,
+    BillRead,
+    BillRecordResult,
+    CategoryListResult,
+    CategoryRead,
+)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -23,40 +29,59 @@ logger = logging.getLogger(__name__)
 mcp = FastMCP("记账服务", host="0.0.0.0", port=8000)
 
 
-@mcp.tool()
-async def get_categories() -> str:
+@mcp.tool(
+    name="get_categories",
+    description="获取当前所有分类及其描述。",
+    structured_output=True,
+)
+async def get_categories(ctx: Context | None = None) -> CategoryListResult:
     """获取当前所有分类及其描述."""
+    _ = ctx
     try:
         with session_scope() as session:
             categories = list_categories(session)
 
-        if not categories:
-            return "当前没有分类，请先添加分类。"
-
-        lines = ["📂 当前可用的分类列表："]
-        for index, category in enumerate(categories, start=1):
-            lines.append(f"{index}. 【{category.name}】")
-            if category.description:
-                lines.append(f"   描述：{category.description}")
-
-        return "\n".join(lines)
+        category_models = [
+            CategoryRead.model_validate(category) for category in categories
+        ]
+        return CategoryListResult(total=len(category_models), categories=category_models)
+    except ValidationError as exc:
+        logger.exception("分类数据解析失败: %s", exc)
+        raise ValueError("分类数据格式不正确，请稍后重试。") from exc
     except Exception as exc:  # noqa: BLE001
         logger.exception("获取分类失败: %s", exc)
-        return f"获取分类失败：{exc}"
+        raise ValueError(f"获取分类失败：{exc}") from exc
 
 
-@mcp.tool()
+@mcp.tool(
+    name="record_bill",
+    description="记录一笔账单，包括金额、分类与描述。",
+    structured_output=True,
+)
 async def record_bill(
-    amount: float,
-    category: Optional[str] = None,
-    description: Optional[str] = None,
-) -> str:
+    amount: Annotated[
+        float,
+        PydanticField(
+            description="账单金额，正数为支出，负数为收入。",
+        ),
+    ],
+    category: Annotated[
+        str | None,
+        PydanticField(default=None, description="分类名称，可选。"),
+    ] = None,
+    description: Annotated[
+        str | None,
+        PydanticField(default=None, description="账单描述，可选。"),
+    ] = None,
+    ctx: Context | None = None,
+) -> BillRecordResult:
     """记录一笔账单."""
+    _ = ctx
     try:
         bill_data = BillCreate(amount=amount, category=category, description=description)
     except ValidationError as exc:
         logger.warning("账单数据校验失败: %s", exc)
-        return "账单数据不合法，请检查输入金额。"
+        raise ValueError("账单数据不合法，请检查输入金额。") from exc
 
     try:
         with session_scope() as session:
@@ -72,20 +97,18 @@ async def record_bill(
 
             bill = create_bill(session, bill_data, category_obj)
 
-        type_text = "支出" if bill.type == "expense" else "收入"
-        lines = [
-            "💾 账单记录成功！",
-            f"类型：{type_text}",
-            f"金额：¥{bill.amount:.2f}",
-            f"分类：{category_display}",
-        ]
-        if bill.description:
-            lines.append(f"描述：{bill.description}")
-
-        return "\n".join(lines)
+        bill_model = BillRead.model_validate(bill)
+        return BillRecordResult(
+            message="💾 账单记录成功！",
+            category_display=category_display,
+            bill=bill_model,
+        )
+    except ValidationError as exc:
+        logger.exception("账单数据解析失败: %s", exc)
+        raise ValueError("账单数据格式不正确，请稍后重试。") from exc
     except Exception as exc:  # noqa: BLE001
         logger.exception("记录账单失败: %s", exc)
-        return f"记录账单失败：{exc}"
+        raise ValueError(f"记录账单失败：{exc}") from exc
 
 
 def main() -> None:

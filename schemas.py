@@ -36,3 +36,41 @@ class BillCreate(BaseModel):
     @property
     def abs_amount(self) -> float:
         return abs(self.amount)
+
+
+class CategoryListResult(BaseModel):
+    """Structured response for listing available categories."""
+
+    total: int = Field(description="Total number of categories currently available.")
+    categories: list[CategoryRead] = Field(
+        default_factory=list,
+        description="Detailed information for each available category.",
+    )
+
+
+class BillRead(BaseModel):
+    """Representation of a recorded bill."""
+
+    id: int
+    amount: float
+    type: str
+    description: Optional[str] = Field(default=None, description="Description of the bill.")
+    category: Optional[CategoryRead] = Field(
+        default=None, description="Category associated with the bill, if any."
+    )
+
+    class Config:
+        from_attributes = True
+
+
+class BillRecordResult(BaseModel):
+    """Structured response returned after recording a bill."""
+
+    message: str = Field(description="Human-readable confirmation message.")
+    category_display: str = Field(
+        description=(
+            "Textual representation of the category used when recording the bill, "
+            "including fallback information when the category is unknown."
+        )
+    )
+    bill: BillRead = Field(description="Recorded bill instance returned by the backend.")
