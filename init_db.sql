@@ -1,3 +1,8 @@
+-- 防止中文乱码
+SET NAMES utf8mb4;
+SET CHARACTER SET utf8mb4;
+SET character_set_connection=utf8mb4;
+
 -- 初始化数据库表结构
 
 -- 创建分类表
