@@ -12,7 +12,7 @@ services:
     depends_on:
       mysql:
         condition: service_healthy
-    command: ["python", "-m", "app"]
+    command: ["python", "-m", "finance_tracker"]
 
   mysql:
     image: mysql:8.3

@@ -5,7 +5,7 @@ WORKDIR /app
 COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY app ./
+COPY finance_tracker ./
 
 ENV DB_HOST=mysql \
     DB_PORT=3306 \
@@ -13,4 +13,4 @@ ENV DB_HOST=mysql \
     DB_PASSWORD=financepass \
     DB_NAME=finance_tracker
 
-CMD ["python", "-m", "app"]
+CMD ["python", "-m", "finance_tracker"]
