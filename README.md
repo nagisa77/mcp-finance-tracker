@@ -115,9 +115,11 @@ await record_bill(amount=-5000.00, category="工资", description="本月工资"
 ```
 mcp-finance-tracker/
 ├── mcp_server.py          # MCP 服务端主程序
-├── database.py            # 数据库操作模块
+├── crud.py                # 数据库 CRUD 操作
+├── schemas.py             # Pydantic 数据模型
+├── models.py              # SQLAlchemy 数据模型
+├── database.py            # 数据库会话管理模块
 ├── config.py              # 配置文件
-├── init_db.sql            # 数据库初始化脚本
 ├── requirements.txt       # Python 依赖
 ├── Dockerfile             # Docker 镜像定义
 ├── docker-compose.yml     # Docker Compose 配置
@@ -125,6 +127,8 @@ mcp-finance-tracker/
 ├── .gitignore            # Git 忽略文件
 └── README.md             # 项目说明
 ```
+
+系统启动时会自动创建数据库表并填充默认分类（餐饮、交通、购物、收入），无需手动执行 SQL 脚本。
 
 ## 配置说明
 
@@ -138,9 +142,10 @@ mcp-finance-tracker/
 
 ## 技术栈
 
-- **FastMCP**: 最新版本的 MCP 框架
-- **PyMySQL**: MySQL 数据库连接
+- **MCP**: 官方 MCP 框架 (mcp>=1.19.0)
+- **SQLAlchemy**: ORM 与表结构管理
 - **Pydantic**: 数据验证
+- **PyMySQL**: MySQL 数据库驱动
 - **Docker**: 容器化部署
 
 ## 许可证
