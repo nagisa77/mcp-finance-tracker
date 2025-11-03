@@ -9,7 +9,7 @@ services:
       MYSQL_USER: finance_user
       MYSQL_PASSWORD: finance_password
     ports:
-      - "3306:3306"
+      - "4406:4406"
     volumes:
       - mysql_data:/var/lib/mysql
     healthcheck:
@@ -27,13 +27,13 @@ services:
         condition: service_healthy
     environment:
       DB_HOST: mysql
-      DB_PORT: 3306
+      DB_PORT: 4406
       DB_USER: finance_user
       DB_PASSWORD: finance_password
       DB_NAME: finance_db
     command: python -m mcp.mcp_server
     ports:
-      - "8000:8000"
+      - "8888:8888"
 
 volumes:
   mysql_data:

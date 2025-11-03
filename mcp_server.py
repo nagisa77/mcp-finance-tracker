@@ -5,14 +5,14 @@ from typing import Annotated
 from mcp.server.fastmcp import Context, FastMCP
 from pydantic import Field as PydanticField, ValidationError
 
-from .crud import (
+from crud import (
     create_bill,
     ensure_default_categories,
     get_category_by_name,
     list_categories,
 )
-from .database import init_database, session_scope
-from .schemas import (
+from database import init_database, session_scope
+from schemas import (
     BillCreate,
     BillRead,
     BillRecordResult,
