@@ -6,7 +6,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, Session
 import logging
 
-from config import DATABASE_URL
+from .config import DATABASE_URL
 
 logger = logging.getLogger(__name__)
 
@@ -37,6 +37,6 @@ def session_scope() -> Iterator[Session]:
 
 def init_database() -> None:
     """初始化数据库结构."""
-    from models import Base  # noqa: WPS433 - 延迟导入以避免循环依赖
+    from .models import Base  # noqa: WPS433 - 延迟导入以避免循环依赖
 
     Base.metadata.create_all(bind=engine)

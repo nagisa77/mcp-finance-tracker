@@ -31,7 +31,7 @@ services:
       DB_USER: finance_user
       DB_PASSWORD: finance_password
       DB_NAME: finance_db
-    command: python mcp_server.py
+    command: python -m mcp.mcp_server
     ports:
       - "8000:8000"
 

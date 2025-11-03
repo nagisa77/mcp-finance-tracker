@@ -71,7 +71,7 @@ docker-compose up -d mysql
 
 4. 运行服务：
 ```bash
-python mcp_server.py
+python -m mcp.mcp_server
 ```
 
 ## 使用 MCP Tool
@@ -114,18 +114,20 @@ await record_bill(amount=-5000.00, category="工资", description="本月工资"
 
 ```
 mcp-finance-tracker/
-├── mcp_server.py          # MCP 服务端主程序
-├── crud.py                # 数据库 CRUD 操作
-├── schemas.py             # Pydantic 数据模型
-├── models.py              # SQLAlchemy 数据模型
-├── database.py            # 数据库会话管理模块
-├── config.py              # 配置文件
-├── requirements.txt       # Python 依赖
-├── Dockerfile             # Docker 镜像定义
-├── docker-compose.yml     # Docker Compose 配置
-├── .env.example           # 环境变量示例
-├── .gitignore            # Git 忽略文件
-└── README.md             # 项目说明
+├── mcp/
+│   ├── __init__.py          # MCP 包初始化
+│   ├── mcp_server.py        # MCP 服务端主程序
+│   ├── crud.py              # 数据库 CRUD 操作
+│   ├── config.py            # 配置文件
+│   ├── schemas.py           # Pydantic 数据模型
+│   ├── models.py            # SQLAlchemy 数据模型
+│   └── database.py          # 数据库会话管理模块
+├── requirements.txt         # Python 依赖
+├── Dockerfile               # Docker 镜像定义
+├── docker-compose.yml       # Docker Compose 配置
+├── .env.example             # 环境变量示例
+├── .gitignore               # Git 忽略文件
+└── README.md                # 项目说明
 ```
 
 系统启动时会自动创建数据库表并填充默认分类（餐饮、交通、购物、收入），无需手动执行 SQL 脚本。

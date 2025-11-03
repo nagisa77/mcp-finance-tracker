@@ -36,7 +36,7 @@ export DB_PASSWORD=finance_password
 export DB_NAME=finance_db
 
 # 4. 运行服务
-python mcp_server.py
+python -m mcp.mcp_server
 ```
 
 ## 数据库配置
@@ -178,17 +178,23 @@ python
 
 ```python
 # 在 Python 交互环境中测试
-from database import DatabaseManager
+from mcp.database import session_scope
+from mcp.crud import list_categories, get_category_by_name, create_bill
+from mcp.schemas import BillCreate
 
-db = DatabaseManager()
-db.connect()
+with session_scope() as session:
+    # 测试查询分类
+    categories = list_categories(session)
+    print(categories)
 
-# 测试查询分类
-categories = db.get_categories()
-print(categories)
-
-# 测试添加账单
-db.add_bill(100.0, 'expense', 1, '测试')
+    # 测试添加账单
+    category = get_category_by_name(session, "餐饮")
+    bill = create_bill(
+        session,
+        BillCreate(amount=100.0, category="餐饮", description="测试"),
+        category,
+    )
+    print(bill)
 ```
 
 ## 部署到生产环境

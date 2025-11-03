@@ -4,9 +4,9 @@ from typing import List, Optional
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from config import DEFAULT_CATEGORIES
-from models import Bill, Category
-from schemas import BillCreate
+from .config import DEFAULT_CATEGORIES
+from .models import Bill, Category
+from .schemas import BillCreate
 
 
 def ensure_default_categories(session: Session) -> None:
