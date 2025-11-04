@@ -55,6 +55,8 @@ const mcp = hostedMcpTool({
     "get_categories",
     "record_bill",
     "record_multiple_bills",
+    "get_expense_summary",
+    "get_category_expense_detail",
   ],
   requireApproval: "never",
 });
