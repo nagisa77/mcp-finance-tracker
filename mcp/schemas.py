@@ -1,5 +1,6 @@
 """Pydantic 模型."""
-from typing import Optional
+from datetime import datetime
+from typing import List, Optional
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -55,6 +56,8 @@ class BillRead(BaseModel):
     amount: float
     type: str
     description: Optional[str] = Field(default=None, description="Description of the bill.")
+    created_at: datetime = Field(description="Timestamp when the bill was created.")
+    updated_at: datetime = Field(description="Timestamp when the bill was last updated.")
     category: Optional[CategoryRead] = Field(
         default=None, description="Category associated with the bill, if any."
     )
@@ -74,3 +77,13 @@ class BillRecordResult(BaseModel):
         )
     )
     bill: BillRead = Field(description="Recorded bill instance returned by the backend.")
+
+
+class BillBatchRecordResult(BaseModel):
+    """Structured response returned after recording multiple bills."""
+
+    message: str = Field(description="Summary message for the batch recording.")
+    records: List[BillRecordResult] = Field(
+        default_factory=list,
+        description="Detailed result for each recorded bill.",
+    )

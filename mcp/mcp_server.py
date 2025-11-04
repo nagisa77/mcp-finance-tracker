@@ -4,6 +4,7 @@ from typing import Annotated
 
 from mcp.server.fastmcp import Context, FastMCP
 from pydantic import Field as PydanticField, ValidationError
+from sqlalchemy.orm import Session
 
 from .crud import (
     create_bill,
@@ -12,7 +13,9 @@ from .crud import (
     list_categories,
 )
 from .database import init_database, session_scope
+from .models import Category
 from .schemas import (
+    BillBatchRecordResult,
     BillCreate,
     BillRead,
     BillRecordResult,
@@ -27,6 +30,22 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 mcp = FastMCP("记账服务", host="0.0.0.0", port=8000)
+
+
+def _resolve_category(
+    session: Session, category_name: str | None
+) -> tuple[Category | None, str]:
+    """根据名称解析分类并返回显示文本."""
+
+    category_obj = None
+    category_display = "未分类"
+    if category_name:
+        category_obj = get_category_by_name(session, category_name)
+        if category_obj is not None:
+            category_display = category_obj.name
+        else:
+            category_display = f"未知分类：{category_name}"
+    return category_obj, category_display
 
 
 @mcp.tool(
@@ -85,16 +104,9 @@ async def record_bill(
 
     try:
         with session_scope() as session:
-            category_obj = None
-            category_display = "未分类"
-
-            if bill_data.category:
-                category_obj = get_category_by_name(session, bill_data.category)
-                if category_obj is not None:
-                    category_display = category_obj.name
-                else:
-                    category_display = f"未知分类：{bill_data.category}"
-
+            category_obj, category_display = _resolve_category(
+                session, bill_data.category
+            )
             bill = create_bill(session, bill_data, category_obj)
             bill_model = BillRead.model_validate(bill)
         return BillRecordResult(
@@ -108,6 +120,68 @@ async def record_bill(
     except Exception as exc:  # noqa: BLE001
         logger.exception("记录账单失败: %s", exc)
         raise ValueError(f"记录账单失败：{exc}") from exc
+
+
+@mcp.tool(
+    name="record_multiple_bills",
+    description="批量记录多笔账单，支持一次传入多条记录。",
+    structured_output=True,
+)
+async def record_multiple_bills(
+    bills: Annotated[
+        list[dict],
+        PydanticField(
+            description=(
+                "待记录的账单列表，每一项应包含 amount、category、description 字段。"
+            ),
+            min_length=1,
+        ),
+    ],
+    ctx: Context | None = None,
+) -> BillBatchRecordResult:
+    """批量记录账单."""
+
+    _ = ctx
+    try:
+        bill_inputs: list[BillCreate] = []
+        for index, payload in enumerate(bills, start=1):
+            try:
+                bill_inputs.append(BillCreate.model_validate(payload))
+            except ValidationError as exc:
+                logger.warning("第 %s 条账单数据校验失败: %s", index, exc)
+                raise ValueError(
+                    f"第 {index} 条账单数据不合法，请检查金额与字段格式。"
+                ) from exc
+    except TypeError as exc:
+        logger.warning("账单批量数据类型错误: %s", exc)
+        raise ValueError("账单列表格式不正确，请提供 JSON 数组。") from exc
+
+    try:
+        with session_scope() as session:
+            records: list[BillRecordResult] = []
+            for bill_data in bill_inputs:
+                category_obj, category_display = _resolve_category(
+                    session, bill_data.category
+                )
+                bill = create_bill(session, bill_data, category_obj)
+                bill_model = BillRead.model_validate(bill)
+                records.append(
+                    BillRecordResult(
+                        message="💾 账单记录成功！",
+                        category_display=category_display,
+                        bill=bill_model,
+                    )
+                )
+        return BillBatchRecordResult(
+            message=f"成功记录 {len(records)} 笔账单。",
+            records=records,
+        )
+    except ValidationError as exc:
+        logger.exception("批量账单数据解析失败: %s", exc)
+        raise ValueError("账单数据格式不正确，请稍后重试。") from exc
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("批量记录账单失败: %s", exc)
+        raise ValueError(f"批量记录账单失败：{exc}") from exc
 
 
 def main() -> None:
