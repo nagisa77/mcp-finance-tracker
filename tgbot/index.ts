@@ -61,9 +61,9 @@ const mcp = hostedMcpTool({
 
 const agent = new Agent({
   name: "finance_agent",
-  instructions: "调用get_categories获取目前账单有什么类型。分析用户输入，如果是账单（图片/文字），图片需要解析其中的文字作为账单输入。如果用户输入的是单次消费，调用record_bill记录账单；如果是多次消费，调用record_multiple_bills。不需要中间询问用户。",
+  instructions: "首先务必调用get_categories获取目前记账基本类型信息。分析用户输入，如果是账单（图片/文字），图片需要解析其中的文字作为账单输入。如果用户输入的是单次消费，调用record_bill记录账单；如果是多次消费，调用record_multiple_bills。不需要中间询问用户。另外最后输出的时候，需要包含记账每笔账单+类型信息",
   tools: [mcp],
-  model: "gpt-4o-mini",
+  model: "gpt-4o",
   modelSettings: {
     temperature: 0.7,
     topP: 1,
