@@ -85,8 +85,8 @@ async def record_bill(
         ),
     ],
     category: Annotated[
-        str | None,
-        PydanticField(default=None, description="分类名称，可选。"),
+        str,
+        PydanticField(description="分类名称，可选。"),
     ] = None,
     description: Annotated[
         str | None,
@@ -129,12 +129,18 @@ async def record_bill(
 )
 async def record_multiple_bills(
     bills: Annotated[
-        list[dict],
+        list[BillCreate],
         PydanticField(
-            description=(
-                "待记录的账单列表，每一项应包含 amount、category、description 字段。"
-            ),
+            description="待记录的账单列表。",
             min_length=1,
+            json_schema_extra={
+                "items": {
+                    "examples": [
+                        {"amount": 18.5, "category": "餐饮", "description": "午餐"},
+                        {"amount": -2000, "category": "工资", "description": "10月发薪"},
+                    ]
+                }
+            },
         ),
     ],
     ctx: Context | None = None,

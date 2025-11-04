@@ -20,7 +20,7 @@ class BillCreate(BaseModel):
     """账单创建输入模型."""
 
     amount: float = Field(..., description="金额，正数为支出，负数为收入")
-    category: Optional[str] = Field(default=None, description="分类名称")
+    category: str = Field(..., description="分类名称")
     description: Optional[str] = Field(default=None, description="账单描述")
 
     @field_validator("amount")
