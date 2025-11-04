@@ -1,6 +1,7 @@
 """记账 MCP 服务端."""
 import logging
-from typing import Annotated
+from datetime import date, datetime, time, timedelta
+from typing import Annotated, Literal
 
 from mcp.server.fastmcp import Context, FastMCP
 from pydantic import Field as PydanticField, ValidationError
@@ -9,7 +10,12 @@ from sqlalchemy.orm import Session
 from .crud import (
     create_bill,
     ensure_default_categories,
+    get_categories_by_ids,
     get_category_by_id,
+    get_category_filtered_expenses,
+    get_expense_summary_by_category,
+    get_total_expense,
+    get_total_expense_for_categories,
     list_categories,
 )
 from .database import init_database, session_scope
@@ -19,8 +25,12 @@ from .schemas import (
     BillCreate,
     BillRead,
     BillRecordResult,
+    BillExpenseDetail,
     CategoryListResult,
     CategoryRead,
+    CategoryExpenseBreakdown,
+    CategoryExpenseDetailResult,
+    ExpenseSummaryResult,
 )
 
 logging.basicConfig(
@@ -28,6 +38,8 @@ logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
 logger = logging.getLogger(__name__)
+
+CURRENT_DATE_TEXT = date.today().isoformat()
 
 mcp = FastMCP("记账服务", host="0.0.0.0", port=8000)
 
@@ -46,6 +58,60 @@ def _resolve_category(
         else:
             category_display = f"未知分类：{category_id}"
     return category_obj, category_display
+
+
+def _parse_period(
+    period: Literal["day", "month", "year"],
+    reference: str,
+) -> tuple[datetime, datetime, str]:
+    """将周期与参考值转换为起止时间范围."""
+
+    ref = reference.strip()
+    if not ref:
+        raise ValueError("请提供用于确定时间范围的参考值。")
+
+    if period == "day":
+        try:
+            target_date = datetime.strptime(ref, "%Y-%m-%d").date()
+        except ValueError as exc:  # noqa: TRY003
+            raise ValueError("日期格式错误，应为 YYYY-MM-DD。") from exc
+        start = datetime.combine(target_date, time.min)
+        end = start + timedelta(days=1)
+        label = target_date.strftime("%Y-%m-%d")
+    elif period == "month":
+        try:
+            target_date = datetime.strptime(ref, "%Y-%m").date().replace(day=1)
+        except ValueError as exc:  # noqa: TRY003
+            raise ValueError("月份格式错误，应为 YYYY-MM。") from exc
+        start = datetime.combine(target_date, time.min)
+        # 通过先跳到本月 28 日再加 4 天确保跨月
+        next_month_base = target_date.replace(day=28) + timedelta(days=4)
+        next_month = next_month_base.replace(day=1)
+        end = datetime.combine(next_month, time.min)
+        label = target_date.strftime("%Y-%m")
+    elif period == "year":
+        try:
+            target_year = int(ref)
+        except ValueError as exc:  # noqa: TRY003
+            raise ValueError("年份格式错误，应为 YYYY。") from exc
+        start_date = date(target_year, 1, 1)
+        start = datetime.combine(start_date, time.min)
+        end = datetime.combine(date(target_year + 1, 1, 1), time.min)
+        label = f"{target_year:04d}"
+    else:  # pragma: no cover - 由类型系统保证
+        raise ValueError("不支持的统计粒度。")
+
+    return start, end, label
+
+
+def _unique_category_ids(category_ids: list[int]) -> list[int]:
+    """保持顺序地去重分类 ID 列表."""
+
+    seen: dict[int, None] = {}
+    for cid in category_ids:
+        if cid not in seen:
+            seen[cid] = None
+    return list(seen.keys())
 
 
 @mcp.tool(
@@ -179,7 +245,7 @@ async def record_multiple_bills(
                         category_display=category_display,
                         bill=bill_model,
                     )
-                )
+        )
         return BillBatchRecordResult(
             message=f"成功记录 {len(records)} 笔账单。",
             records=records,
@@ -190,6 +256,153 @@ async def record_multiple_bills(
     except Exception as exc:  # noqa: BLE001
         logger.exception("批量记录账单失败: %s", exc)
         raise ValueError(f"批量记录账单失败：{exc}") from exc
+
+
+@mcp.tool(
+    name="get_expense_summary",
+    description=(
+        "获取指定周期内的消费小结（包含总开销及各分类支出排行）。"
+        f"当前日期：{CURRENT_DATE_TEXT}"
+    ),
+    structured_output=True,
+)
+async def get_expense_summary(
+    period: Annotated[
+        Literal["day", "month", "year"],
+        PydanticField(description="统计粒度，可选值为 day、month、year。"),
+    ],
+    reference: Annotated[
+        str,
+        PydanticField(
+            description=(
+                "用于确定时间范围的参考值。day 传 YYYY-MM-DD，"
+                "month 传 YYYY-MM，year 传 YYYY。"
+            )
+        ),
+    ],
+    ctx: Context | None = None,
+) -> ExpenseSummaryResult:
+    """按分类汇总指定时间范围内的消费数据."""
+
+    _ = ctx
+    try:
+        start, end, label = _parse_period(period, reference)
+    except ValueError as exc:
+        raise ValueError(str(exc)) from exc
+
+    try:
+        with session_scope() as session:
+            total_expense = get_total_expense(session, start, end)
+            breakdown_raw = get_expense_summary_by_category(session, start, end)
+
+        breakdown_models = [
+            CategoryExpenseBreakdown(**item) for item in breakdown_raw
+        ]
+
+        return ExpenseSummaryResult(
+            period=period,
+            reference=reference,
+            resolved_label=label,
+            start=start,
+            end=end,
+            total_expense=total_expense,
+            category_breakdown=breakdown_models,
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("获取消费小结失败: %s", exc)
+        raise ValueError(f"获取消费小结失败：{exc}") from exc
+
+
+@mcp.tool(
+    name="get_category_expense_detail",
+    description=(
+        "获取指定分类在某个周期内的消费明细（含总开销与金额排名前 20 的账单）。"
+        f"当前日期：{CURRENT_DATE_TEXT}"
+    ),
+    structured_output=True,
+)
+async def get_category_expense_detail(
+    period: Annotated[
+        Literal["day", "month", "year"],
+        PydanticField(description="统计粒度，可选值为 day、month、year。"),
+    ],
+    reference: Annotated[
+        str,
+        PydanticField(
+            description=(
+                "用于确定时间范围的参考值。day 传 YYYY-MM-DD，"
+                "month 传 YYYY-MM，year 传 YYYY。"
+            )
+        ),
+    ],
+    category_ids: Annotated[
+        list[int],
+        PydanticField(
+            min_length=1,
+            description="需要统计的分类 ID 列表。",
+            json_schema_extra={"example": [1, 2, 3]},
+        ),
+    ],
+    ctx: Context | None = None,
+) -> CategoryExpenseDetailResult:
+    """查询指定分类在某个时间范围内的消费明细."""
+
+    _ = ctx
+    try:
+        start, end, label = _parse_period(period, reference)
+    except ValueError as exc:
+        raise ValueError(str(exc)) from exc
+
+    normalized_ids = _unique_category_ids(category_ids)
+
+    try:
+        with session_scope() as session:
+            categories = get_categories_by_ids(session, normalized_ids)
+            found_ids = {category.id for category in categories}
+            missing = [cid for cid in normalized_ids if cid not in found_ids]
+            if missing:
+                raise ValueError(
+                    "以下分类 ID 不存在，请检查后重试：" + ", ".join(map(str, missing))
+                )
+
+            category_models = [
+                CategoryRead.model_validate(category) for category in categories
+            ]
+            total_expense = get_total_expense_for_categories(
+                session, start, end, normalized_ids
+            )
+            bills = get_category_filtered_expenses(
+                session, start, end, normalized_ids
+            )
+
+            bill_details = [
+                BillExpenseDetail(
+                    bill_id=bill.id,
+                    amount=bill.amount,
+                    description=bill.description,
+                    created_at=bill.created_at,
+                    category_name=
+                    bill.category.name if bill.category is not None else "未分类",
+                )
+                for bill in bills
+            ]
+
+        return CategoryExpenseDetailResult(
+            period=period,
+            reference=reference,
+            resolved_label=label,
+            start=start,
+            end=end,
+            category_ids=normalized_ids,
+            selected_categories=category_models,
+            total_expense=total_expense,
+            top_bills=bill_details,
+        )
+    except ValueError:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("获取分类消费明细失败: %s", exc)
+        raise ValueError(f"获取分类消费明细失败：{exc}") from exc
 
 
 def main() -> None:

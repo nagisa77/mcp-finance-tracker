@@ -1,6 +1,6 @@
 """Pydantic 模型."""
 from datetime import datetime
-from typing import List, Optional
+from typing import List, Literal, Optional
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -96,4 +96,80 @@ class BillBatchRecordResult(BaseModel):
     records: List[BillRecordResult] = Field(
         default_factory=list,
         description="Detailed result for each recorded bill.",
+    )
+
+
+class CategoryExpenseBreakdown(BaseModel):
+    """Representation of the total expense for a specific category."""
+
+    category_id: Optional[int] = Field(
+        default=None,
+        description="Identifier of the category. None means uncategorised entries.",
+    )
+    category_name: str = Field(description="Display name of the category.")
+    total_amount: float = Field(description="Total expense amount for the category.")
+
+
+class ExpenseSummaryResult(BaseModel):
+    """Summary of expenses grouped by category for a given period."""
+
+    period: Literal["day", "month", "year"] = Field(
+        description="The aggregation level used for the summary.",
+    )
+    reference: str = Field(
+        description="Original user-supplied reference that defines the period.",
+    )
+    resolved_label: str = Field(
+        description="Normalized representation of the requested period.",
+    )
+    start: datetime = Field(description="Inclusive start timestamp of the range.")
+    end: datetime = Field(description="Exclusive end timestamp of the range.")
+    total_expense: float = Field(description="Total expenses within the range.")
+    category_breakdown: List[CategoryExpenseBreakdown] = Field(
+        default_factory=list,
+        description="Expenses for each category sorted by amount descending.",
+    )
+
+
+class BillExpenseDetail(BaseModel):
+    """Detailed information for a single expense bill."""
+
+    bill_id: int = Field(description="Unique identifier of the bill record.")
+    amount: float = Field(description="Expense amount for the bill.")
+    description: Optional[str] = Field(
+        default=None, description="Optional description provided when recording."
+    )
+    created_at: datetime = Field(
+        description="Timestamp representing when the bill was recorded.",
+    )
+    category_name: str = Field(description="Display name of the category.")
+
+
+class CategoryExpenseDetailResult(BaseModel):
+    """Summary of expenses for specific categories within a period."""
+
+    period: Literal["day", "month", "year"] = Field(
+        description="The aggregation level used for the summary.",
+    )
+    reference: str = Field(
+        description="Original user-supplied reference that defines the period.",
+    )
+    resolved_label: str = Field(
+        description="Normalized representation of the requested period.",
+    )
+    start: datetime = Field(description="Inclusive start timestamp of the range.")
+    end: datetime = Field(description="Exclusive end timestamp of the range.")
+    category_ids: List[int] = Field(
+        description="List of category identifiers included in this summary.",
+    )
+    selected_categories: List[CategoryRead] = Field(
+        default_factory=list,
+        description="Detailed information for the selected categories.",
+    )
+    total_expense: float = Field(
+        description="Total expenses within the range for the selected categories.",
+    )
+    top_bills: List[BillExpenseDetail] = Field(
+        default_factory=list,
+        description="Top individual expense bills sorted by amount (up to 20 items).",
     )
