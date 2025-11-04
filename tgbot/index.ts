@@ -1,4 +1,4 @@
-const TelegramBot = require('node-telegram-bot-api');
+import TelegramBot, { type Message } from 'node-telegram-bot-api';
 
 const token = process.env.TELEGRAM_TOKEN;
 
@@ -8,7 +8,7 @@ if (!token) {
 
 const bot = new TelegramBot(token, { polling: true });
 
-bot.on('message', (msg) => {
+bot.on('message', (msg: Message) => {
   const chatId = msg.chat.id;
 
   if (typeof msg.text === 'string') {
@@ -18,7 +18,7 @@ bot.on('message', (msg) => {
   }
 });
 
-bot.on('polling_error', (error) => {
+bot.on('polling_error', (error: Error) => {
   console.error('Polling error:', error.message);
 });
 

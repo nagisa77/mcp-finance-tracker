@@ -2,12 +2,18 @@
   "name": "mcp-finance-tracker-tgbot",
   "version": "1.0.0",
   "description": "Simple Telegram bot that echoes user messages using node-telegram-bot-api.",
-  "main": "index.js",
+  "main": "index.ts",
   "type": "commonjs",
   "scripts": {
-    "start": "node index.js"
+    "start": "ts-node index.ts"
   },
   "dependencies": {
     "node-telegram-bot-api": "^0.66.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.30",
+    "@types/node-telegram-bot-api": "^0.66.4",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.4.5"
   }
 }
