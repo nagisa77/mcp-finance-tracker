@@ -90,8 +90,8 @@ def get_expense_summary_by_category(
         .order_by(desc("total_amount"))
     )
 
-    result = session.execute(stmt)
-    return [
+    result = list(session.execute(stmt))
+    breakdown = [
         {
             "category_id": row.category_id,
             "category_name": row.category_name,
@@ -99,6 +99,16 @@ def get_expense_summary_by_category(
         }
         for row in result
     ]
+
+    total_amount = sum(item["total_amount"] for item in breakdown)
+    if total_amount <= 0:
+        for item in breakdown:
+            item["percentage"] = 0.0
+    else:
+        for item in breakdown:
+            item["percentage"] = item["total_amount"] / total_amount * 100
+
+    return breakdown
 
 
 def get_total_expense(
