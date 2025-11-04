@@ -18,15 +18,18 @@ async function uploadPhotosAndGetFileIds(photos: StoredPhoto[]) {
 
 type InputPartWithFileId =
   | { type: "input_text"; text: string }
-  | { type: "input_image"; file_id: string; detail: "low" | "high" | "auto" };
+  | { type: "input_image"; image: { id: string }; detail: "low" | "high" | "auto" };
 
 async function buildContentPartsWithFileIds(text: string, photos: StoredPhoto[]): Promise<InputPartWithFileId[]> {
   const fileIds = await uploadPhotosAndGetFileIds(photos);
-  const parts: InputPartWithFileId[] = [{ type: "input_text", text }];
+  const parts: InputPartWithFileId[] = [];
 
   for (const id of fileIds) {
-    parts.push({ type: "input_image", file_id: id, detail: "high" });
+    parts.push({ type: "input_image", image: { id: id }, detail: "high" });
   }
+
+  parts.push({ type: "input_text", text });
+
   return parts;
 }
 
@@ -96,7 +99,7 @@ async function runWorkflowFromParts(contentParts: InputPartWithFileId[]) {
     // 改成保护嵌套的 file_id
     const preview = JSON.stringify(
       contentParts.map(p =>
-        p.type === "input_text" ? p : { ...p, file_id: p.file_id }
+        p.type === "input_text" ? p : { ...p, image: p.image }
       )
     );
     console.log("🖼️ content parts (preview):", preview.slice(0, 500));
@@ -104,8 +107,9 @@ async function runWorkflowFromParts(contentParts: InputPartWithFileId[]) {
     // 关键：把输入封装成“消息数组”，而不是纯字符串
     const messages = [
       {
+        type: "message",
         role: "user" as const,
-        content: contentParts, // SDK 会识别 input_text/input_image + file_id 结构
+        content: contentParts, 
       },
     ];
 
