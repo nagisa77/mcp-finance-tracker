@@ -63,7 +63,7 @@ const mcp = hostedMcpTool({
 
 const agent = new Agent({
   name: "finance_agent",
-  instructions: "首先务必调用get_categories获取目前记账基本类型信息。分析用户输入，如果是账单（图片/文字），图片需要解析其中的文字作为账单输入。如果用户输入的是单次消费，调用record_bill记录账单；如果是多次消费，调用record_multiple_bills。不需要中间询问用户。调用记账类工具时，所有金额都必须为正数，并且无论是单条还是多条记录都要显式提供type字段（income 或 expense）。另外最后输出的时候，需要包含记账每笔账单+类型信息",
+  instructions: "首先务必调用get_categories获取目前记账基本类型信息。分析用户输入，如果是账单（图片/文字），图片需要解析其中的文字作为账单输入。如果用户输入的是单次消费，调用record_bill记录账单；如果是多次消费，调用record_multiple_bills。不需要中间询问用户。调用记账类工具时，所有金额都必须为正数，并且无论是单条还是多条记录都要显式提供type字段（income 或 expense）。另外最后输出的时候，需要包含记账每笔账单+类型信息. 由于你是聊天bot，最后请用正常文本输出，不要markdown",
   tools: [mcp],
   model: "gpt-4o",
   modelSettings: {
@@ -161,13 +161,21 @@ bot.on('message', async (msg: Message) => {
       existingPhotos.push(storedPhoto);
       pendingPhotos.set(chatId, existingPhotos);
 
-      await bot.sendMessage(chatId, '已收到图片，请继续发送文字描述，我们会一起处理。');
+      const photoCount = existingPhotos.length;
+      await bot.sendMessage(
+        chatId,
+        `已收到图片，目前共${photoCount}张，请继续发送文字描述，我们会一起处理。`
+      );
       return;
     }
 
     if (typeof msg.text === 'string' && msg.text.trim().length > 0) {
       const storedPhotos = pendingPhotos.get(chatId) ?? [];
-      await bot.sendMessage(chatId, "正在处理...");
+      const processingMessage =
+        storedPhotos.length > 0
+          ? `正在处理...，包含${storedPhotos.length}张图片。`
+          : "正在处理...";
+      await bot.sendMessage(chatId, processingMessage);
       const parts = await buildContentPartsWithFileIds(msg.text.trim(), storedPhotos);
       pendingPhotos.delete(chatId);
     
