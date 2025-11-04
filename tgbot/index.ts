@@ -6,7 +6,7 @@ export type WorkflowInput = { input_as_text: string };
 
 const mcp = hostedMcpTool({
   serverLabel: "finance_mcp",
-  serverUrl: "http://finance_mcp_server:8888",
+  serverUrl: "https://www.open-isle.com/mcp-wallet",
   allowedTools: [
     "get_categories",
     "record_bill",
@@ -82,7 +82,7 @@ bot.on('message', async (msg: Message) => {
   const chatId = msg.chat.id;
 
   if (typeof msg.text === 'string') {
-    console.log("🔍 Running workflow...");
+    console.log("🔍 Now Running workflow...");
     bot.sendMessage(chatId, "正在处理...");
     const result = await runWorkflow({ input_as_text: msg.text });
     bot.sendMessage(chatId, result.output_text as string);

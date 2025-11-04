@@ -20,7 +20,7 @@ services:
 
   mcp_server:
     build: .
-    container_name: finance_mcp_server
+    container_name: mcp_server
     restart: always
     depends_on:
       mysql:
