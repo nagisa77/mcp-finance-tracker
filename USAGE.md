@@ -76,11 +76,21 @@ print(result)
 
 ```python
 # 记录支出
-result = await record_bill(amount=100.50, category="餐饮", description="午餐")
+result = await record_bill(
+    amount=100.50,
+    type="expense",
+    category_id=1,
+    description="午餐",
+)
 print(result)
 
-# 记录收入（使用负数）
-result = await record_bill(amount=-5000.00, category="工资", description="本月工资")
+# 记录收入
+result = await record_bill(
+    amount=5000.00,
+    type="income",
+    category_id=5,
+    description="本月工资",
+)
 print(result)
 ```
 

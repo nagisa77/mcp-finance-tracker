@@ -6,7 +6,7 @@ from sqlalchemy import Select, asc, desc, func, select
 from sqlalchemy.orm import Session
 
 from .config import DEFAULT_CATEGORIES
-from .models import Bill, Category
+from .models import Bill, BillType, Category
 from .schemas import BillCreate
 
 
@@ -56,8 +56,8 @@ def get_category_by_id(session: Session, category_id: int) -> Optional[Category]
 def create_bill(session: Session, data: BillCreate, category: Optional[Category]) -> Bill:
     """创建账单记录."""
     bill = Bill(
-        amount=data.abs_amount,
-        type=data.bill_type,
+        amount=data.amount,
+        type=BillType(data.type),
         description=data.description,
         category=category,
     )
@@ -82,7 +82,7 @@ def get_expense_summary_by_category(
         )
         .join(Category, Bill.category_id == Category.id, isouter=True)
         .where(
-            Bill.type == "expense",
+            Bill.type == BillType.EXPENSE,
             Bill.created_at >= start,
             Bill.created_at < end,
         )
@@ -111,7 +111,7 @@ def get_total_expense(
     total_stmt: Select = (
         select(func.coalesce(func.sum(Bill.amount), 0))
         .where(
-            Bill.type == "expense",
+            Bill.type == BillType.EXPENSE,
             Bill.created_at >= start,
             Bill.created_at < end,
         )
@@ -135,7 +135,7 @@ def get_category_filtered_expenses(
     stmt: Select = (
         select(Bill)
         .where(
-            Bill.type == "expense",
+            Bill.type == BillType.EXPENSE,
             Bill.created_at >= start,
             Bill.created_at < end,
             Bill.category_id.in_(category_id_list),
@@ -161,7 +161,7 @@ def get_total_expense_for_categories(
     total_stmt: Select = (
         select(func.coalesce(func.sum(Bill.amount), 0))
         .where(
-            Bill.type == "expense",
+            Bill.type == BillType.EXPENSE,
             Bill.created_at >= start,
             Bill.created_at < end,
             Bill.category_id.in_(category_id_list),

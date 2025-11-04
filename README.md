@@ -100,14 +100,25 @@ await get_categories()
 
 ```python
 # 记录支出
-await record_bill(amount=100.50, category="餐饮", description="午餐")
+await record_bill(
+    amount=100.50,
+    type="expense",
+    category_id=1,
+    description="午餐",
+)
 
 # 记录收入
-await record_bill(amount=-5000.00, category="工资", description="本月工资")
+await record_bill(
+    amount=5000.00,
+    type="income",
+    category_id=5,
+    description="本月工资",
+)
 ```
 
-- `amount`: 金额（正数表示支出，负数表示收入）
-- `category`: 分类名称（可选）
+- `amount`: 金额（必须为正数）
+- `type`: 账单类型，可选值为 `income` 或 `expense`
+- `category_id`: 分类 ID（可选，省略时记为未分类）
 - `description`: 账单描述（可选）
 
 ## 项目结构

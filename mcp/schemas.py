@@ -4,6 +4,8 @@ from typing import List, Literal, Optional
 
 from pydantic import BaseModel, Field, field_validator
 
+from .models import BillType
+
 
 class CategoryRead(BaseModel):
     """分类输出模型."""
@@ -19,7 +21,10 @@ class CategoryRead(BaseModel):
 class BillCreate(BaseModel):
     """账单创建输入模型."""
 
-    amount: float = Field(..., description="金额，正数为支出，负数为收入")
+    amount: float = Field(..., gt=0, description="金额，必须为正数")
+    type: BillType = Field(
+        ..., description="账单类型，可选值为 income 或 expense"
+    )
     category_id: Optional[int] = Field(
         default=None,
         description="分类 ID，未提供时记为未分类",
@@ -28,9 +33,9 @@ class BillCreate(BaseModel):
 
     @field_validator("amount")
     @classmethod
-    def amount_cannot_be_zero(cls, value: float) -> float:
-        if value == 0:
-            raise ValueError("金额不能为 0")
+    def amount_must_be_positive(cls, value: float) -> float:
+        if value <= 0:
+            raise ValueError("金额必须为正数")
         return value
 
     @field_validator("category_id")
@@ -39,15 +44,6 @@ class BillCreate(BaseModel):
         if value is not None and value <= 0:
             raise ValueError("分类 ID 必须为正整数")
         return value
-
-    @property
-    def bill_type(self) -> str:
-        return "expense" if self.amount >= 0 else "income"
-
-    @property
-    def abs_amount(self) -> float:
-        return abs(self.amount)
-
 
 class CategoryListResult(BaseModel):
     """Structured response for listing available categories."""
@@ -64,7 +60,7 @@ class BillRead(BaseModel):
 
     id: int
     amount: float
-    type: str
+    type: BillType
     description: Optional[str] = Field(default=None, description="Description of the bill.")
     created_at: datetime = Field(description="Timestamp when the bill was created.")
     updated_at: datetime = Field(description="Timestamp when the bill was last updated.")

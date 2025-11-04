@@ -63,7 +63,7 @@ const mcp = hostedMcpTool({
 
 const agent = new Agent({
   name: "finance_agent",
-  instructions: "首先务必调用get_categories获取目前记账基本类型信息。分析用户输入，如果是账单（图片/文字），图片需要解析其中的文字作为账单输入。如果用户输入的是单次消费，调用record_bill记录账单；如果是多次消费，调用record_multiple_bills。不需要中间询问用户。另外最后输出的时候，需要包含记账每笔账单+类型信息",
+  instructions: "首先务必调用get_categories获取目前记账基本类型信息。分析用户输入，如果是账单（图片/文字），图片需要解析其中的文字作为账单输入。如果用户输入的是单次消费，调用record_bill记录账单；如果是多次消费，调用record_multiple_bills。不需要中间询问用户。调用记账类工具时，所有金额都必须为正数，并且无论是单条还是多条记录都要显式提供type字段（income 或 expense）。另外最后输出的时候，需要包含记账每笔账单+类型信息",
   tools: [mcp],
   model: "gpt-4o",
   modelSettings: {

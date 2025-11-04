@@ -1,8 +1,18 @@
 """SQLAlchemy 模型定义."""
 from datetime import datetime
+from enum import Enum
 from typing import List, Optional
 
-from sqlalchemy import DateTime, Float, ForeignKey, Integer, String, func
+from sqlalchemy import (
+    CheckConstraint,
+    DateTime,
+    Enum as SAEnum,
+    Float,
+    ForeignKey,
+    Integer,
+    String,
+    func,
+)
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
@@ -22,14 +32,26 @@ class Category(Base):
     bills: Mapped[List["Bill"]] = relationship(back_populates="category", cascade="all,delete")
 
 
+class BillType(str, Enum):
+    """账单类型枚举."""
+
+    INCOME = "income"
+    EXPENSE = "expense"
+
+
 class Bill(Base):
     """账单记录."""
 
     __tablename__ = "bills"
+    __table_args__ = (
+        CheckConstraint("amount > 0", name="ck_bill_amount_positive"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     amount: Mapped[float] = mapped_column(Float, nullable=False)
-    type: Mapped[str] = mapped_column(String(16), nullable=False)
+    type: Mapped[BillType] = mapped_column(
+        SAEnum(BillType, name="bill_type", native_enum=False), nullable=False
+    )
     description: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False

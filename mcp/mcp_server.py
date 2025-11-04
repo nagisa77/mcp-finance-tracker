@@ -147,8 +147,12 @@ async def record_bill(
     amount: Annotated[
         float,
         PydanticField(
-            description="账单金额，正数为支出，负数为收入。",
+            description="账单金额，必须为正数。",
         ),
+    ],
+    type: Annotated[
+        Literal["income", "expense"],
+        PydanticField(description="账单类型，可选值为 income 或 expense。"),
     ],
     category_id: Annotated[
         int | None,
@@ -164,7 +168,10 @@ async def record_bill(
     _ = ctx
     try:
         bill_data = BillCreate(
-            amount=amount, category_id=category_id, description=description
+            amount=amount,
+            type=type,
+            category_id=category_id,
+            description=description,
         )
     except ValidationError as exc:
         logger.warning("账单数据校验失败: %s", exc)
@@ -204,8 +211,18 @@ async def record_multiple_bills(
             json_schema_extra={
                 "items": {
                     "examples": [
-                        {"amount": 18.5, "category_id": 1, "description": "午餐"},
-                        {"amount": -2000, "category_id": 5, "description": "10月发薪"},
+                        {
+                            "amount": 18.5,
+                            "type": "expense",
+                            "category_id": 1,
+                            "description": "午餐",
+                        },
+                        {
+                            "amount": 2000,
+                            "type": "income",
+                            "category_id": 5,
+                            "description": "10月发薪",
+                        },
                     ]
                 }
             },
