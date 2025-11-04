@@ -1,8 +1,49 @@
-import TelegramBot, { type Message } from 'node-telegram-bot-api';
+import TelegramBot, { type Message, type PhotoSize } from 'node-telegram-bot-api';
 import { Agent, Runner, hostedMcpTool, withTrace } from "@openai/agents";
+import https from 'https';
+import OpenAI from "openai";
+import { toFile } from "openai/uploads";
+
+async function uploadPhotosAndGetFileIds(photos: StoredPhoto[]) {
+  const ids: string[] = [];
+  for (const p of photos) {
+    const file = await openai.files.create({
+      file: await toFile(Buffer.from(p.base64Data, "base64"), p.fileName, { type: p.mimeType }),
+      purpose: "assistants",
+    });
+    ids.push(file.id);
+  }
+  return ids;
+}
+
+type InputPartWithFileId =
+  | { type: "input_text"; text: string }
+  | { type: "input_image"; file_id: string; detail: "low" | "high" | "auto" };
+
+async function buildContentPartsWithFileIds(text: string, photos: StoredPhoto[]): Promise<InputPartWithFileId[]> {
+  const fileIds = await uploadPhotosAndGetFileIds(photos);
+  const parts: InputPartWithFileId[] = [{ type: "input_text", text }];
+
+  for (const id of fileIds) {
+    parts.push({ type: "input_image", file_id: id, detail: "high" });
+  }
+  return parts;
+}
+
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
+});
 
 const token = process.env.TELEGRAM_TOKEN;
-export type WorkflowInput = { input_as_text: string };
+
+type StoredPhoto = {
+  fileId: string;
+  fileName: string;
+  mimeType: string;
+  base64Data: string;
+};
+
+const pendingPhotos = new Map<number, StoredPhoto[]>();
 
 const mcp = hostedMcpTool({
   serverLabel: "finance_mcp",
@@ -18,7 +59,7 @@ const agent = new Agent({
   name: "finance_agent",
   instructions: "调用get_categories获取目前账单有什么类型。分析用户输入，如果是账单（图片/文字）,图片需要解析其中的文字作为账单输入，然后调用record_bill记录账单。中间不用询问用户",
   tools: [mcp],
-  model: "gpt-4o",
+  model: "gpt-4o-mini",
   modelSettings: {
     temperature: 0.7,
     topP: 1,
@@ -38,36 +79,54 @@ function createRunner(): Runner {
   });
 }
 
-async function runWorkflow(workflow: WorkflowInput) {
+async function runWorkflowFromParts(contentParts: InputPartWithFileId[]) {
   if (!process.env.OPENAI_API_KEY) {
     throw new Error("Missing OPENAI_API_KEY");
   }
-  const runner = createRunner();
-  return await withTrace(`finance_agent run`, async () => {
-    const preview = workflow.input_as_text.trim();
-    console.log(
-      "📝 Received workflow input (preview):",
-      preview.length > 200 ? `${preview.slice(0, 200)}…` : preview
-    );
 
-    console.log("🚦 Starting agent run with maxTurns=16...");
-    const result = await runner.run(agent, workflow.input_as_text, {
+  // 可选：做一点点防御
+  if (!Array.isArray(contentParts) || contentParts.length === 0) {
+    throw new Error("contentParts is empty.");
+  }
+
+  const runner = createRunner();
+
+  return await withTrace(`finance_agent run`, async () => {
+    // 打点预览（避免把完整 file_id 打爆日志）
+    // 改成保护嵌套的 file_id
+    const preview = JSON.stringify(
+      contentParts.map(p =>
+        p.type === "input_text" ? p : { ...p, file_id: p.file_id }
+      )
+    );
+    console.log("🖼️ content parts (preview):", preview.slice(0, 500));
+
+    // 关键：把输入封装成“消息数组”，而不是纯字符串
+    const messages = [
+      {
+        role: "user" as const,
+        content: contentParts, // SDK 会识别 input_text/input_image + file_id 结构
+      },
+    ];
+
+    // 有些类型定义较严格，必要时可加 `as any`
+    const result = await runner.run(agent as any, messages as any, {
       maxTurns: 16,
     });
 
-    console.log("📬 Agent run completed. Result keys:", Object.keys(result));
+    console.log("📬 Agent run completed. Result keys:", Object.keys(result ?? {}));
 
-    if (!result.finalOutput) {
+    if (!result || !result.finalOutput) {
       throw new Error("Agent result is undefined (no final output).");
     }
 
     const financeAgentResult = { output_text: String(result.finalOutput) };
-
     console.log(
       "🤖 Agent result (length=%d):\n%s",
       financeAgentResult.output_text.length,
       financeAgentResult.output_text
     );
+
     return financeAgentResult;
   });
 }
@@ -81,13 +140,40 @@ const bot = new TelegramBot(token, { polling: true });
 bot.on('message', async (msg: Message) => {
   const chatId = msg.chat.id;
 
-  if (typeof msg.text === 'string') {
-    console.log("🔍 Now Running workflow...");
-    bot.sendMessage(chatId, "正在处理...");
-    const result = await runWorkflow({ input_as_text: msg.text });
-    bot.sendMessage(chatId, result.output_text as string);
-  } else {
-    bot.sendMessage(chatId, 'I can only echo text messages right now.');
+  try {
+    if (Array.isArray(msg.photo) && msg.photo.length > 0) {
+      const largestPhoto = selectLargestPhoto(msg.photo);
+      if (!largestPhoto) {
+        await bot.sendMessage(chatId, '未能识别图片，请重试。');
+        return;
+      }
+
+      const storedPhoto = await downloadPhotoAsBase64(largestPhoto.file_id);
+
+      const existingPhotos = pendingPhotos.get(chatId) ?? [];
+      existingPhotos.push(storedPhoto);
+      pendingPhotos.set(chatId, existingPhotos);
+
+      await bot.sendMessage(chatId, '已收到图片，请继续发送文字描述，我们会一起处理。');
+      return;
+    }
+
+    if (typeof msg.text === 'string' && msg.text.trim().length > 0) {
+      const storedPhotos = pendingPhotos.get(chatId) ?? [];
+      await bot.sendMessage(chatId, "正在处理...");
+      const parts = await buildContentPartsWithFileIds(msg.text.trim(), storedPhotos);
+      pendingPhotos.delete(chatId);
+    
+      const result = await runWorkflowFromParts(parts as any);
+      await bot.sendMessage(chatId, result.output_text);
+      return;
+    }
+    
+
+    await bot.sendMessage(chatId, '目前仅支持接收图片和文本消息。');
+  } catch (error) {
+    console.error('处理消息时出错:', error);
+    await bot.sendMessage(chatId, '处理消息时发生错误，请稍后再试。');
   }
 });
 
@@ -96,3 +182,68 @@ bot.on('polling_error', (error: Error) => {
 });
 
 console.log('Telegram echo bot is up and running.');
+
+function selectLargestPhoto(photos: PhotoSize[]): PhotoSize | undefined {
+  return photos.reduce<PhotoSize | undefined>((selected, current) => {
+    if (!selected) {
+      return current;
+    }
+    const selectedPixels = (selected.width ?? 0) * (selected.height ?? 0);
+    const currentPixels = (current.width ?? 0) * (current.height ?? 0);
+    return currentPixels > selectedPixels ? current : selected;
+  }, undefined);
+}
+
+async function downloadPhotoAsBase64(fileId: string): Promise<StoredPhoto> {
+  const file = await bot.getFile(fileId);
+  if (!file.file_path) {
+    throw new Error('无法获取图片路径');
+  }
+
+  const fileUrl = `https://api.telegram.org/file/bot${token}/${file.file_path}`;
+  const fileBuffer = await fetchFileBuffer(fileUrl);
+  const fileName = file.file_path.split('/').pop() ?? `${fileId}.jpg`;
+  const mimeType = guessMimeType(file.file_path);
+
+  return {
+    fileId,
+    fileName,
+    mimeType,
+    base64Data: fileBuffer.toString('base64'),
+  };
+}
+
+function fetchFileBuffer(url: string): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    https
+      .get(url, (res) => {
+        if (res.statusCode && res.statusCode >= 400) {
+          reject(new Error(`下载失败，状态码: ${res.statusCode}`));
+          res.resume();
+          return;
+        }
+
+        const data: Buffer[] = [];
+        res.on('data', (chunk) => data.push(chunk as Buffer));
+        res.on('end', () => resolve(Buffer.concat(data)));
+      })
+      .on('error', reject);
+  });
+}
+
+function guessMimeType(filePath: string): string {
+  const extension = filePath.split('.').pop()?.toLowerCase();
+  switch (extension) {
+    case 'jpg':
+    case 'jpeg':
+      return 'image/jpeg';
+    case 'png':
+      return 'image/png';
+    case 'webp':
+      return 'image/webp';
+    case 'gif':
+      return 'image/gif';
+    default:
+      return 'application/octet-stream';
+  }
+}
