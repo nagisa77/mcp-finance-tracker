@@ -31,6 +31,12 @@ def get_category_by_name(session: Session, name: str) -> Optional[Category]:
     return session.scalars(stmt).first()
 
 
+def get_category_by_id(session: Session, category_id: int) -> Optional[Category]:
+    """根据 ID 获取分类."""
+    stmt = select(Category).where(Category.id == category_id)
+    return session.scalars(stmt).first()
+
+
 def create_bill(session: Session, data: BillCreate, category: Optional[Category]) -> Bill:
     """创建账单记录."""
     bill = Bill(

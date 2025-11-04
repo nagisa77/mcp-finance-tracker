@@ -20,7 +20,10 @@ class BillCreate(BaseModel):
     """账单创建输入模型."""
 
     amount: float = Field(..., description="金额，正数为支出，负数为收入")
-    category: str = Field(..., description="分类名称")
+    category_id: Optional[int] = Field(
+        default=None,
+        description="分类 ID，未提供时记为未分类",
+    )
     description: Optional[str] = Field(default=None, description="账单描述")
 
     @field_validator("amount")
@@ -28,6 +31,13 @@ class BillCreate(BaseModel):
     def amount_cannot_be_zero(cls, value: float) -> float:
         if value == 0:
             raise ValueError("金额不能为 0")
+        return value
+
+    @field_validator("category_id")
+    @classmethod
+    def category_id_must_be_positive(cls, value: Optional[int]) -> Optional[int]:
+        if value is not None and value <= 0:
+            raise ValueError("分类 ID 必须为正整数")
         return value
 
     @property

@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from .crud import (
     create_bill,
     ensure_default_categories,
-    get_category_by_name,
+    get_category_by_id,
     list_categories,
 )
 from .database import init_database, session_scope
@@ -33,18 +33,18 @@ mcp = FastMCP("记账服务", host="0.0.0.0", port=8000)
 
 
 def _resolve_category(
-    session: Session, category_name: str | None
+    session: Session, category_id: int | None
 ) -> tuple[Category | None, str]:
-    """根据名称解析分类并返回显示文本."""
+    """根据 ID 解析分类并返回显示文本."""
 
-    category_obj = None
+    category_obj: Category | None = None
     category_display = "未分类"
-    if category_name:
-        category_obj = get_category_by_name(session, category_name)
+    if category_id is not None:
+        category_obj = get_category_by_id(session, category_id)
         if category_obj is not None:
             category_display = category_obj.name
         else:
-            category_display = f"未知分类：{category_name}"
+            category_display = f"未知分类：{category_id}"
     return category_obj, category_display
 
 
@@ -84,9 +84,9 @@ async def record_bill(
             description="账单金额，正数为支出，负数为收入。",
         ),
     ],
-    category: Annotated[
-        str,
-        PydanticField(description="分类名称，可选。"),
+    category_id: Annotated[
+        int | None,
+        PydanticField(description="分类 ID，可选。"),
     ] = None,
     description: Annotated[
         str | None,
@@ -97,7 +97,9 @@ async def record_bill(
     """记录一笔账单."""
     _ = ctx
     try:
-        bill_data = BillCreate(amount=amount, category=category, description=description)
+        bill_data = BillCreate(
+            amount=amount, category_id=category_id, description=description
+        )
     except ValidationError as exc:
         logger.warning("账单数据校验失败: %s", exc)
         raise ValueError("账单数据不合法，请检查输入金额。") from exc
@@ -105,7 +107,7 @@ async def record_bill(
     try:
         with session_scope() as session:
             category_obj, category_display = _resolve_category(
-                session, bill_data.category
+                session, bill_data.category_id
             )
             bill = create_bill(session, bill_data, category_obj)
             bill_model = BillRead.model_validate(bill)
@@ -136,8 +138,8 @@ async def record_multiple_bills(
             json_schema_extra={
                 "items": {
                     "examples": [
-                        {"amount": 18.5, "category": "餐饮", "description": "午餐"},
-                        {"amount": -2000, "category": "工资", "description": "10月发薪"},
+                        {"amount": 18.5, "category_id": 1, "description": "午餐"},
+                        {"amount": -2000, "category_id": 5, "description": "10月发薪"},
                     ]
                 }
             },
@@ -167,7 +169,7 @@ async def record_multiple_bills(
             records: list[BillRecordResult] = []
             for bill_data in bill_inputs:
                 category_obj, category_display = _resolve_category(
-                    session, bill_data.category
+                    session, bill_data.category_id
                 )
                 bill = create_bill(session, bill_data, category_obj)
                 bill_model = BillRead.model_validate(bill)
