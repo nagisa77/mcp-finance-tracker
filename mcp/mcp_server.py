@@ -61,7 +61,7 @@ def _resolve_category(
 
 
 def _parse_period(
-    period: Literal["day", "month", "year"],
+    period: Literal["day", "week", "month", "year"],
     reference: str,
 ) -> tuple[datetime, datetime, str]:
     """将周期与参考值转换为起止时间范围."""
@@ -78,6 +78,17 @@ def _parse_period(
         start = datetime.combine(target_date, time.min)
         end = start + timedelta(days=1)
         label = target_date.strftime("%Y-%m-%d")
+    elif period == "week":
+        try:
+            year_part, week_part = ref.split("-W", maxsplit=1)
+            target_year = int(year_part)
+            target_week = int(week_part)
+            target_date = date.fromisocalendar(target_year, target_week, 1)
+        except ValueError as exc:  # noqa: TRY003
+            raise ValueError("周格式错误，应为 YYYY-Www，例如 2024-W09。") from exc
+        start = datetime.combine(target_date, time.min)
+        end = start + timedelta(days=7)
+        label = f"{target_year:04d}-W{target_week:02d}"
     elif period == "month":
         try:
             target_date = datetime.strptime(ref, "%Y-%m").date().replace(day=1)
@@ -285,15 +296,17 @@ async def record_multiple_bills(
 )
 async def get_expense_summary(
     period: Annotated[
-        Literal["day", "month", "year"],
-        PydanticField(description="统计粒度，可选值为 day、month、year。"),
+        Literal["day", "week", "month", "year"],
+        PydanticField(
+            description="统计粒度，可选值为 day、week、month、year。",
+        ),
     ],
     reference: Annotated[
         str,
         PydanticField(
             description=(
                 "用于确定时间范围的参考值。day 传 YYYY-MM-DD，"
-                "month 传 YYYY-MM，year 传 YYYY。"
+                "week 传 YYYY-Www，month 传 YYYY-MM，year 传 YYYY。"
             )
         ),
     ],
@@ -340,15 +353,17 @@ async def get_expense_summary(
 )
 async def get_category_expense_detail(
     period: Annotated[
-        Literal["day", "month", "year"],
-        PydanticField(description="统计粒度，可选值为 day、month、year。"),
+        Literal["day", "week", "month", "year"],
+        PydanticField(
+            description="统计粒度，可选值为 day、week、month、year。",
+        ),
     ],
     reference: Annotated[
         str,
         PydanticField(
             description=(
                 "用于确定时间范围的参考值。day 传 YYYY-MM-DD，"
-                "month 传 YYYY-MM，year 传 YYYY。"
+                "week 传 YYYY-Www，month 传 YYYY-MM，year 传 YYYY。"
             )
         ),
     ],

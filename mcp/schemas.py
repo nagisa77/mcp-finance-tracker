@@ -104,12 +104,17 @@ class CategoryExpenseBreakdown(BaseModel):
     )
     category_name: str = Field(description="Display name of the category.")
     total_amount: float = Field(description="Total expense amount for the category.")
+    percentage: float = Field(
+        description=(
+            "Contribution of this category to the total expense percentage (0-100)."
+        )
+    )
 
 
 class ExpenseSummaryResult(BaseModel):
     """Summary of expenses grouped by category for a given period."""
 
-    period: Literal["day", "month", "year"] = Field(
+    period: Literal["day", "week", "month", "year"] = Field(
         description="The aggregation level used for the summary.",
     )
     reference: str = Field(
@@ -144,7 +149,7 @@ class BillExpenseDetail(BaseModel):
 class CategoryExpenseDetailResult(BaseModel):
     """Summary of expenses for specific categories within a period."""
 
-    period: Literal["day", "month", "year"] = Field(
+    period: Literal["day", "week", "month", "year"] = Field(
         description="The aggregation level used for the summary.",
     )
     reference: str = Field(
