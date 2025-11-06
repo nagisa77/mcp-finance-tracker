@@ -113,6 +113,7 @@ def get_expense_summary_by_category(
     start: datetime,
     end: datetime,
     user_id: str,
+    category_ids: Iterable[int] | None = None,
 ) -> list[dict[str, object]]:
     """在指定时间区间内按分类统计支出."""
 
@@ -133,6 +134,12 @@ def get_expense_summary_by_category(
         .group_by(Bill.category_id, Category.name, Category.color)
         .order_by(desc("total_amount"))
     )
+
+    category_id_list = list(category_ids) if category_ids is not None else []
+    if category_ids is not None:
+        if not category_id_list:
+            return []
+        stmt = stmt.where(Bill.category_id.in_(category_id_list))
 
     result = list(session.execute(stmt))
     breakdown = [
@@ -161,6 +168,7 @@ def get_total_expense(
     start: datetime,
     end: datetime,
     user_id: str,
+    category_ids: Iterable[int] | None = None,
 ) -> float:
     """统计指定时间区间内的总支出."""
 
@@ -173,6 +181,11 @@ def get_total_expense(
             Bill.user_id == user_id,
         )
     )
+    if category_ids is not None:
+        category_id_list = list(category_ids)
+        if not category_id_list:
+            return 0.0
+        total_stmt = total_stmt.where(Bill.category_id.in_(category_id_list))
     return float(session.execute(total_stmt).scalar_one())
 
 

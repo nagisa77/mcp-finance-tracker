@@ -324,11 +324,22 @@ async def compare_expense_periods(
             )
         ),
     ],
+    category_ids: Annotated[
+        list[int] | None,
+        PydanticField(
+            default=None,
+            description="需要对比的分类 ID 列表，可传入一个或多个分类，不传则统计全部分类。",
+        ),
+    ] = None,
     ctx: Context | None = None,
 ) -> ExpenseComparisonResult:
     """Compare expense summaries between two time periods."""
 
     user_id = require_user_id(ctx)
+
+    normalized_category_ids: list[int] | None = None
+    if category_ids is not None:
+        normalized_category_ids = unique_category_ids(category_ids)
 
     try:
         first_start, first_end, first_label = parse_period(period, first_reference)
@@ -340,14 +351,34 @@ async def compare_expense_periods(
         with session_scope() as session:
             ensure_default_categories(session, user_id)
 
-            first_total = get_total_expense(session, first_start, first_end, user_id)
+            first_total = get_total_expense(
+                session,
+                first_start,
+                first_end,
+                user_id,
+                normalized_category_ids,
+            )
             first_breakdown_raw = get_expense_summary_by_category(
-                session, first_start, first_end, user_id
+                session,
+                first_start,
+                first_end,
+                user_id,
+                normalized_category_ids,
             )
 
-            second_total = get_total_expense(session, second_start, second_end, user_id)
+            second_total = get_total_expense(
+                session,
+                second_start,
+                second_end,
+                user_id,
+                normalized_category_ids,
+            )
             second_breakdown_raw = get_expense_summary_by_category(
-                session, second_start, second_end, user_id
+                session,
+                second_start,
+                second_end,
+                user_id,
+                normalized_category_ids,
             )
     except Exception as exc:  # noqa: BLE001
         logger.exception("获取消费对比数据失败: %s", exc)
