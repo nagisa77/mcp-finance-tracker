@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import logging
-import os
 from io import BytesIO
 from typing import Iterable
 
@@ -119,6 +118,100 @@ def _render_bar_chart(
     return _figure_to_png_bytes(fig)
 
 
+def _render_comparison_bar_chart(
+    first_breakdown: Iterable[CategoryExpenseBreakdown],
+    first_label: str,
+    second_breakdown: Iterable[CategoryExpenseBreakdown],
+    second_label: str,
+) -> bytes | None:
+    first_items = list(first_breakdown)
+    second_items = list(second_breakdown)
+    combined: dict[tuple[int | None, str], dict[str, object]] = {}
+
+    def _ingest(items: list[CategoryExpenseBreakdown], key: str) -> None:
+        for item in items:
+            identifier = (item.category_id, item.category_name)
+            entry = combined.setdefault(
+                identifier,
+                {
+                    "category_name": item.category_name,
+                    "color": item.color or UNCATEGORIZED_CATEGORY_COLOR,
+                    "first": 0.0,
+                    "second": 0.0,
+                },
+            )
+            entry[key] = float(item.total_amount)
+
+    _ingest(first_items, "first")
+    _ingest(second_items, "second")
+
+    if not combined:
+        return None
+
+    ordered_entries = sorted(
+        combined.values(),
+        key=lambda value: float(value.get("first", 0.0))
+        + float(value.get("second", 0.0)),
+        reverse=True,
+    )
+
+    categories = [entry["category_name"] for entry in ordered_entries]
+    first_amounts = [float(entry.get("first", 0.0)) for entry in ordered_entries]
+    second_amounts = [float(entry.get("second", 0.0)) for entry in ordered_entries]
+    colors = [str(entry.get("color", UNCATEGORIZED_CATEGORY_COLOR)) for entry in ordered_entries]
+
+    x_positions = np.arange(len(categories))
+    bar_width = 0.38
+    figure_width = max(6.0, 0.9 * len(categories))
+    fig, ax = plt.subplots(figsize=(figure_width, 5))
+
+    bars_first = ax.bar(
+        x_positions - bar_width / 2,
+        first_amounts,
+        bar_width,
+        label=first_label,
+        color=colors,
+        alpha=0.85,
+    )
+    bars_second = ax.bar(
+        x_positions + bar_width / 2,
+        second_amounts,
+        bar_width,
+        label=second_label,
+        color=colors,
+        alpha=0.55,
+    )
+
+    ax.set_ylabel("金额 (元)")
+    ax.set_title(f"分类支出对比：{first_label} vs {second_label}")
+    ax.set_xticks(list(x_positions))
+    ax.set_xticklabels(categories, rotation=45, ha="right")
+    ax.legend()
+    ax.grid(axis="y", linestyle="--", alpha=0.3)
+
+    max_amount = max(first_amounts + second_amounts, default=0)
+    if max_amount <= 0:
+        ax.set_ylim(0, 1)
+    else:
+        ax.set_ylim(0, max_amount * 1.2)
+
+    ax.bar_label(
+        bars_first,
+        labels=[f"{value:.2f}" for value in first_amounts],
+        padding=3,
+        fontsize=9,
+    )
+    ax.bar_label(
+        bars_second,
+        labels=[f"{value:.2f}" for value in second_amounts],
+        padding=3,
+        fontsize=9,
+    )
+
+    fig.tight_layout()
+    return _figure_to_png_bytes(fig)
+
+
 def _render_pie_chart(
     breakdown: Iterable[CategoryExpenseBreakdown],
     period_label: str,
@@ -229,6 +322,34 @@ def generate_expense_summary_charts(
         ChartImage(
             title=f"各分类支出概览（{period_label}）",
             image_url=combined_url,
+            mime_type="image/png",
+        )
+    ]
+
+
+def generate_expense_comparison_chart(
+    first_breakdown: list[CategoryExpenseBreakdown],
+    first_label: str,
+    second_breakdown: list[CategoryExpenseBreakdown],
+    second_label: str,
+) -> list[ChartImage]:
+    """Generate comparison bar chart for two expense breakdowns."""
+
+    chart_bytes = _render_comparison_bar_chart(
+        first_breakdown,
+        first_label,
+        second_breakdown,
+        second_label,
+    )
+
+    if not chart_bytes:
+        return []
+
+    chart_url = upload_chart_image(chart_bytes, "comparison")
+    return [
+        ChartImage(
+            title=f"分类支出对比（{first_label} vs {second_label}）",
+            image_url=chart_url,
             mime_type="image/png",
         )
     ]

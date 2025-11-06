@@ -157,6 +157,42 @@ class ExpenseSummaryResult(BaseModel):
     )
 
 
+class ExpenseComparisonSnapshot(BaseModel):
+    """Expense statistics for a specific period used in comparisons."""
+
+    reference: str = Field(
+        description="Original user-supplied reference that defines the period.",
+    )
+    resolved_label: str = Field(
+        description="Normalized representation of the requested period.",
+    )
+    start: datetime = Field(description="Inclusive start timestamp of the range.")
+    end: datetime = Field(description="Exclusive end timestamp of the range.")
+    total_expense: float = Field(description="Total expenses within the range.")
+    category_breakdown: List[CategoryExpenseBreakdown] = Field(
+        default_factory=list,
+        description="Expenses for each category sorted by amount descending.",
+    )
+
+
+class ExpenseComparisonResult(BaseModel):
+    """Comparison of expenses between two periods."""
+
+    period: Literal["day", "week", "month", "year"] = Field(
+        description="The aggregation level used for the comparison.",
+    )
+    first: ExpenseComparisonSnapshot = Field(
+        description="Statistics for the first period provided in the comparison.",
+    )
+    second: ExpenseComparisonSnapshot = Field(
+        description="Statistics for the second period provided in the comparison.",
+    )
+    charts: List[ChartImage] = Field(
+        default_factory=list,
+        description="Optional comparison charts hosted remotely (e.g. on COS).",
+    )
+
+
 class BillExpenseDetail(BaseModel):
     """Detailed information for a single expense bill."""
 
