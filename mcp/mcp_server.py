@@ -1,11 +1,13 @@
 """记账 MCP 服务端."""
-import base64
 import logging
-from datetime import date, datetime, time, timedelta
+import uuid
+from datetime import date, datetime, time, timedelta, timezone
 from io import BytesIO
 from typing import Annotated, Literal
 
 import matplotlib
+from qcloud_cos import CosConfig, CosS3Client
+from qcloud_cos.cos_exception import CosClientError, CosServiceError
 from mcp.server.fastmcp import Context, FastMCP
 from pydantic import Field as PydanticField, ValidationError
 from sqlalchemy.orm import Session
@@ -40,6 +42,14 @@ from .schemas import (
     ExpenseSummaryResult,
     ExpenseSummaryCharts,
 )
+from .config import (
+    COS_BASE_URL,
+    COS_BUCKET,
+    COS_PATH_PREFIX,
+    COS_REGION,
+    COS_SECRET_ID,
+    COS_SECRET_KEY,
+)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -51,20 +61,78 @@ CURRENT_DATE_TEXT = date.today().isoformat()
 
 mcp = FastMCP("记账服务", host="0.0.0.0", port=8000)
 
+_cos_client: CosS3Client | None = None
 
-def _figure_to_base64(fig) -> str:
-    """Serialize a Matplotlib figure to a base64 encoded PNG string."""
+
+def _figure_to_png_bytes(fig) -> bytes:
+    """Serialize a Matplotlib figure to PNG bytes."""
 
     buffer = BytesIO()
     fig.savefig(buffer, format="png", dpi=150, bbox_inches="tight")
     buffer.seek(0)
-    encoded = base64.b64encode(buffer.getvalue()).decode("ascii")
+    data = buffer.getvalue()
     buffer.close()
     plt.close(fig)
-    return encoded
+    return data
 
 
-def _render_bar_chart(breakdown: list[CategoryExpenseBreakdown]) -> str:
+def _get_cos_client() -> CosS3Client:
+    """Create or reuse a COS client instance using environment configuration."""
+
+    global _cos_client
+    if _cos_client is None:
+        if not all([COS_SECRET_ID, COS_SECRET_KEY, COS_REGION, COS_BUCKET]):
+            raise ValueError("COS 配置信息缺失，请检查环境变量。")
+
+        config = CosConfig(
+            Region=COS_REGION,
+            SecretId=COS_SECRET_ID,
+            SecretKey=COS_SECRET_KEY,
+            Token=None,
+            Scheme="https",
+        )
+        _cos_client = CosS3Client(config)
+    return _cos_client
+
+
+def _build_cos_base_url() -> str:
+    if COS_BASE_URL:
+        return COS_BASE_URL.rstrip("/")
+    if not all([COS_BUCKET, COS_REGION]):
+        raise ValueError("COS Bucket 或 Region 未配置。")
+    return f"https://{COS_BUCKET}.cos.{COS_REGION}.myqcloud.com"
+
+
+def _upload_chart_image(image_bytes: bytes, suffix: str) -> str:
+    """Upload chart image bytes to Tencent COS and return the public URL."""
+
+    client = _get_cos_client()
+    if not COS_BUCKET:
+        raise ValueError("COS Bucket 未配置。")
+
+    date_prefix = datetime.now(timezone.utc).strftime("%Y/%m/%d")
+    unique_key = uuid.uuid4().hex
+    sanitized_prefix = COS_PATH_PREFIX.strip("/") if COS_PATH_PREFIX else ""
+    key_parts = [part for part in (sanitized_prefix, date_prefix) if part]
+    key_parts.append(f"expense-summary-{suffix}-{unique_key}.png")
+    object_key = "/".join(key_parts)
+
+    try:
+        client.put_object(
+            Bucket=COS_BUCKET,
+            Body=image_bytes,
+            Key=object_key,
+            ContentType="image/png",
+        )
+    except (CosClientError, CosServiceError) as exc:
+        logger.exception("上传图表到 COS 失败: %s", exc)
+        raise ValueError("上传图表失败，请稍后再试。") from exc
+
+    base_url = _build_cos_base_url()
+    return f"{base_url}/{object_key}"
+
+
+def _render_bar_chart(breakdown: list[CategoryExpenseBreakdown]) -> bytes:
     """Create a horizontal bar chart for category expenses."""
 
     categories = [item.category_name for item in breakdown]
@@ -88,10 +156,10 @@ def _render_bar_chart(breakdown: list[CategoryExpenseBreakdown]) -> str:
     ax.bar_label(bars, labels=[f"{value:.2f}" for value in reversed_amounts], padding=4, fontsize=9)
 
     fig.tight_layout()
-    return _figure_to_base64(fig)
+    return _figure_to_png_bytes(fig)
 
 
-def _render_pie_chart(breakdown: list[CategoryExpenseBreakdown]) -> str:
+def _render_pie_chart(breakdown: list[CategoryExpenseBreakdown]) -> bytes:
     """Create a pie chart for category expenses."""
 
     categories = [item.category_name for item in breakdown]
@@ -104,7 +172,7 @@ def _render_pie_chart(breakdown: list[CategoryExpenseBreakdown]) -> str:
         ax.text(0.5, 0.5, "暂无支出数据", ha="center", va="center", fontsize=14)
         fig.suptitle("各分类支出占比")
         fig.tight_layout()
-        return _figure_to_base64(fig)
+        return _figure_to_png_bytes(fig)
 
     cmap = plt.get_cmap("tab20")
     colors = [cmap(i % cmap.N) for i in range(len(categories))]
@@ -126,7 +194,7 @@ def _render_pie_chart(breakdown: list[CategoryExpenseBreakdown]) -> str:
     ax.axis("equal")
     ax.set_title("各分类支出占比")
     fig.tight_layout()
-    return _figure_to_base64(fig)
+    return _figure_to_png_bytes(fig)
 
 
 def _generate_expense_summary_charts(
@@ -137,18 +205,21 @@ def _generate_expense_summary_charts(
     if not breakdown:
         return None
 
-    bar_chart_base64 = _render_bar_chart(breakdown)
-    pie_chart_base64 = _render_pie_chart(breakdown)
+    bar_chart_bytes = _render_bar_chart(breakdown)
+    pie_chart_bytes = _render_pie_chart(breakdown)
+
+    bar_chart_url = _upload_chart_image(bar_chart_bytes, "bar")
+    pie_chart_url = _upload_chart_image(pie_chart_bytes, "pie")
 
     return ExpenseSummaryCharts(
         bar_chart=ChartImage(
             title="各分类支出柱状图",
-            base64_data=bar_chart_base64,
+            image_url=bar_chart_url,
             mime_type="image/png",
         ),
         pie_chart=ChartImage(
             title="各分类支出占比",
-            base64_data=pie_chart_base64,
+            image_url=pie_chart_url,
             mime_type="image/png",
         ),
     )

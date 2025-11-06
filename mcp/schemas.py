@@ -112,17 +112,17 @@ class CategoryExpenseBreakdown(BaseModel):
 
 
 class ChartImage(BaseModel):
-    """Base64 encoded chart image returned by the expense summary tool."""
+    """Chart image metadata returned by the expense summary tool."""
 
     title: str = Field(description="Short label describing the chart.")
     mime_type: str = Field(
         default="image/png",
-        description="MIME type of the encoded image content.",
+        description="MIME type of the stored image content.",
         alias="mime_type",
     )
-    base64_data: str = Field(
-        description="Base64 encoded image bytes without data URL prefix.",
-        alias="base64_data",
+    image_url: str = Field(
+        description="Publicly accessible URL pointing to the chart image.",
+        alias="image_url",
     )
 
 
@@ -160,7 +160,7 @@ class ExpenseSummaryResult(BaseModel):
     )
     charts: ExpenseSummaryCharts | None = Field(
         default=None,
-        description="Optional chart visualisations encoded as base64 PNG images.",
+        description="Optional chart visualisations hosted remotely (e.g. on COS).",
     )
 
 

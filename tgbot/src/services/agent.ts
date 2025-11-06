@@ -150,18 +150,31 @@ function extractExpenseSummaryCharts(newItems: any[]): WorkflowImage[] {
 
       const base64Value =
         chart.base64_data ?? chart.base64Data ?? chart.image_base64 ?? chart.imageBase64;
-      if (typeof base64Value !== 'string' || base64Value.trim().length === 0) {
-        continue;
-      }
+      const imageUrlValue = chart.image_url ?? chart.imageUrl ?? chart.url ?? chart.href;
 
       const mimeType: string = chart.mime_type ?? chart.mimeType ?? 'image/png';
       const caption =
         typeof chart.title === 'string' && chart.title.trim().length > 0 ? chart.title : undefined;
 
+      const normalizedBase64 =
+        typeof base64Value === 'string' && base64Value.trim().length > 0
+          ? normalizeBase64(base64Value)
+          : undefined;
+
+      const normalizedUrl =
+        typeof imageUrlValue === 'string' && imageUrlValue.trim().length > 0
+          ? imageUrlValue.trim()
+          : undefined;
+
+      if (!normalizedBase64 && !normalizedUrl) {
+        continue;
+      }
+
       collected.push({
         fileName: `expense-summary-${suffix}.png`,
         mimeType,
-        base64Data: normalizeBase64(base64Value),
+        base64Data: normalizedBase64,
+        imageUrl: normalizedUrl,
         caption,
       });
     }

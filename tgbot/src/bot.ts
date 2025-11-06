@@ -1,4 +1,7 @@
 import TelegramBot, { type Message } from 'node-telegram-bot-api';
+import http from 'node:http';
+import https from 'node:https';
+import { URL } from 'node:url';
 
 import { QUICK_ACTIONS } from './constants/quickActions';
 import { requireEnvVar } from './config/env';
@@ -6,7 +9,12 @@ import { openai } from './openaiClient';
 import { runWorkflowFromParts } from './services/agent';
 import { downloadPhotoAsBase64, buildContentPartsWithFileIds, selectLargestPhoto } from './services/photo';
 import { withTyping } from './services/typing';
-import type { InputPartWithFileId, StoredPhoto, WorkflowResult } from './types';
+import type {
+  InputPartWithFileId,
+  StoredPhoto,
+  WorkflowImage,
+  WorkflowResult,
+} from './types';
 
 const token = requireEnvVar('TELEGRAM_TOKEN');
 const bot = new TelegramBot(token, { polling: true });
@@ -125,17 +133,98 @@ async function sendWorkflowResult(chatId: number, parts: InputPartWithFileId[]) 
   await bot.sendMessage(chatId, result.output_text);
 
   for (const image of result.images ?? []) {
-    const payload = Buffer.from(image.base64Data, 'base64');
-    await bot.sendPhoto(
-      chatId,
-      payload,
-      {
-        caption: image.caption,
-      },
-      {
-        filename: image.fileName,
-        contentType: image.mimeType,
-      },
-    );
+    try {
+      const payload = await resolveImagePayload(image);
+      const contentType = image.mimeType ?? payload.contentType ?? 'image/png';
+
+      await bot.sendPhoto(
+        chatId,
+        payload.buffer,
+        {
+          caption: image.caption,
+        },
+        {
+          filename: image.fileName,
+          contentType,
+        },
+      );
+    } catch (error) {
+      console.error('发送图表图片失败:', error);
+      await bot.sendMessage(chatId, '图表图片发送失败，但报表已生成。');
+    }
   }
+}
+
+async function resolveImagePayload(image: WorkflowImage): Promise<{
+  buffer: Buffer;
+  contentType?: string;
+}> {
+  if (image.base64Data && image.base64Data.trim().length > 0) {
+    return { buffer: Buffer.from(image.base64Data, 'base64'), contentType: image.mimeType };
+  }
+
+  if (image.imageUrl) {
+    return downloadImageFromUrl(image.imageUrl);
+  }
+
+  throw new Error('未提供可用的图像数据。');
+}
+
+function downloadImageFromUrl(
+  imageUrl: string,
+  redirectCount = 0,
+): Promise<{ buffer: Buffer; contentType?: string }> {
+  const MAX_REDIRECTS = 3;
+
+  return new Promise((resolve, reject) => {
+    let urlToFetch: URL;
+    try {
+      urlToFetch = new URL(imageUrl);
+    } catch (error) {
+      reject(error);
+      return;
+    }
+
+    const httpModule = urlToFetch.protocol === 'https:' ? https : http;
+
+    const request = httpModule.get(urlToFetch, (response) => {
+      const statusCode = response.statusCode ?? 0;
+
+      if (statusCode >= 300 && statusCode < 400 && response.headers.location) {
+        response.resume();
+        if (redirectCount >= MAX_REDIRECTS) {
+          reject(new Error('重定向次数过多，无法下载图像。'));
+          return;
+        }
+        const nextUrl = new URL(response.headers.location, urlToFetch);
+        downloadImageFromUrl(nextUrl.toString(), redirectCount + 1)
+          .then(resolve)
+          .catch(reject);
+        return;
+      }
+
+      if (statusCode >= 400) {
+        response.resume();
+        reject(new Error(`下载图像失败，状态码: ${statusCode}`));
+        return;
+      }
+
+      const chunks: Buffer[] = [];
+      response.on('data', (chunk) => {
+        chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+      });
+      response.on('end', () => {
+        const buffer = Buffer.concat(chunks);
+        const headerContentType = response.headers['content-type'];
+        const contentType = Array.isArray(headerContentType)
+          ? headerContentType[0]
+          : headerContentType;
+        resolve({ buffer, contentType });
+      });
+    });
+
+    request.on('error', (error) => {
+      reject(error);
+    });
+  });
 }

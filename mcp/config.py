@@ -32,3 +32,10 @@ DEFAULT_CATEGORIES = [
     {"name": "人情开销", "description": "人情往来、送礼等费用"},
     {"name": "娱乐", "description": "娱乐相关的费用，如电影、演唱会、游戏、网吧等"},
 ]
+
+COS_SECRET_ID = os.getenv("TENCENT_COS_SECRET_ID")
+COS_SECRET_KEY = os.getenv("TENCENT_COS_SECRET_KEY")
+COS_REGION = os.getenv("TENCENT_COS_REGION")
+COS_BUCKET = os.getenv("TENCENT_COS_BUCKET")
+COS_BASE_URL = os.getenv("TENCENT_COS_BASE_URL")
+COS_PATH_PREFIX = os.getenv("TENCENT_COS_PATH_PREFIX", "finance-tracker/charts")
