@@ -150,34 +150,30 @@ async function sendWorkflowResult(
   parts: InputPartWithFileId[]
 ) {
   const result: WorkflowResult = await runWorkflowFromParts(parts);
-  await bot.sendMessage(chatId, result.output_text);
-
   for (const images of result.images ?? []) {
     try {
       for (const image of images) {
         const payload = await resolveImagePayload(image);
         const contentType =
           image.mimeType ?? payload.contentType ?? "image/png";
-
         await bot.sendPhoto(
           chatId,
           payload.buffer,
-          undefined,
+          {
+            caption: image.caption ?? "",
+          },
           {
             filename: image.fileName,
             contentType,
           }
         );
       }
-      for (const image of images) {
-        await bot.sendMessage(chatId, image.caption ?? "");
-      }
-      
     } catch (error) {
       console.error("发送图表图片失败:", error);
       await bot.sendMessage(chatId, "图表图片发送失败，但报表已生成。");
     }
   }
+  await bot.sendMessage(chatId, result.output_text);
 }
 
 async function resolveImagePayload(image: WorkflowImage): Promise<{
