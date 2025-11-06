@@ -1,6 +1,6 @@
 import { Agent, Runner, hostedMcpTool, withTrace } from '@openai/agents';
 
-import type { InputPartWithFileId } from '../types';
+import type { InputPartWithFileId, WorkflowImage, WorkflowResult } from '../types';
 
 const mcp = hostedMcpTool({
   serverLabel: 'finance_mcp',
@@ -87,13 +87,153 @@ export async function runWorkflowFromParts(contentParts: InputPartWithFileId[]) 
       throw new Error('Agent result is undefined (no final output).');
     }
 
-    const financeAgentResult = { output_text: String(result.finalOutput) };
+    const images = extractExpenseSummaryCharts((result as any)?.newItems ?? []);
+
+    const financeAgentResult: WorkflowResult = {
+      output_text: String(result.finalOutput),
+      images,
+    };
     console.log(
       '🤖 Agent result (length=%d):\n%s',
       financeAgentResult.output_text.length,
       financeAgentResult.output_text,
     );
 
+    if (financeAgentResult.images.length > 0) {
+      console.log(
+        '🖼️ Extracted %d chart image(s) from get_expense_summary.',
+        financeAgentResult.images.length,
+      );
+    }
+
     return financeAgentResult;
   });
+}
+
+function extractExpenseSummaryCharts(newItems: any[]): WorkflowImage[] {
+  if (!Array.isArray(newItems) || newItems.length === 0) {
+    return [];
+  }
+
+  const collected: WorkflowImage[] = [];
+
+  for (const item of newItems) {
+    if (!item || item.type !== 'tool_call_output_item') {
+      continue;
+    }
+
+    const rawItem = item.rawItem ?? {};
+    const toolName = rawItem.name ?? rawItem.tool_name ?? rawItem.toolName;
+    if (toolName !== 'get_expense_summary') {
+      continue;
+    }
+
+    const structured = extractStructuredData(item.output);
+    if (!structured || typeof structured !== 'object') {
+      continue;
+    }
+
+    const charts = structured.charts;
+    if (!charts || typeof charts !== 'object') {
+      continue;
+    }
+
+    const chartEntries: Array<[string, any, string]> = [
+      ['bar_chart', charts.bar_chart ?? charts.barChart, 'bar'],
+      ['pie_chart', charts.pie_chart ?? charts.pieChart, 'pie'],
+    ];
+
+    for (const [_key, chart, suffix] of chartEntries) {
+      if (!chart || typeof chart !== 'object') {
+        continue;
+      }
+
+      const base64Value =
+        chart.base64_data ?? chart.base64Data ?? chart.image_base64 ?? chart.imageBase64;
+      if (typeof base64Value !== 'string' || base64Value.trim().length === 0) {
+        continue;
+      }
+
+      const mimeType: string = chart.mime_type ?? chart.mimeType ?? 'image/png';
+      const caption =
+        typeof chart.title === 'string' && chart.title.trim().length > 0 ? chart.title : undefined;
+
+      collected.push({
+        fileName: `expense-summary-${suffix}.png`,
+        mimeType,
+        base64Data: normalizeBase64(base64Value),
+        caption,
+      });
+    }
+  }
+
+  return collected;
+}
+
+function normalizeBase64(value: string): string {
+  const trimmed = value.trim();
+  if (!trimmed.startsWith('data:')) {
+    return trimmed;
+  }
+
+  const commaIndex = trimmed.indexOf(',');
+  return commaIndex === -1 ? trimmed : trimmed.slice(commaIndex + 1);
+}
+
+function extractStructuredData(output: any): any | null {
+  if (!output) {
+    return null;
+  }
+
+  if (Array.isArray(output)) {
+    for (const item of output) {
+      const structured = extractStructuredData(item);
+      if (structured) {
+        return structured;
+      }
+    }
+    return null;
+  }
+
+  if (typeof output === 'string') {
+    try {
+      return JSON.parse(output);
+    } catch (error) {
+      return null;
+    }
+  }
+
+  if (typeof output !== 'object') {
+    return null;
+  }
+
+  if (output.json && typeof output.json === 'object') {
+    return output.json;
+  }
+
+  if (output.structuredContent && typeof output.structuredContent === 'object') {
+    return output.structuredContent;
+  }
+
+  if (typeof output.data === 'string') {
+    try {
+      return JSON.parse(output.data);
+    } catch (error) {
+      // ignore parse error
+    }
+  }
+
+  if (typeof output.text === 'string') {
+    try {
+      return JSON.parse(output.text);
+    } catch (error) {
+      // ignore parse error
+    }
+  }
+
+  if (output.charts && typeof output.charts === 'object') {
+    return output;
+  }
+
+  return null;
 }

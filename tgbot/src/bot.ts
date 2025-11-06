@@ -6,7 +6,7 @@ import { openai } from './openaiClient';
 import { runWorkflowFromParts } from './services/agent';
 import { downloadPhotoAsBase64, buildContentPartsWithFileIds, selectLargestPhoto } from './services/photo';
 import { withTyping } from './services/typing';
-import type { InputPartWithFileId, StoredPhoto } from './types';
+import type { InputPartWithFileId, StoredPhoto, WorkflowResult } from './types';
 
 const token = requireEnvVar('TELEGRAM_TOKEN');
 const bot = new TelegramBot(token, { polling: true });
@@ -121,6 +121,21 @@ async function runWithTyping(chatId: number, action: () => Promise<void>) {
 }
 
 async function sendWorkflowResult(chatId: number, parts: InputPartWithFileId[]) {
-  const result = await runWorkflowFromParts(parts);
+  const result: WorkflowResult = await runWorkflowFromParts(parts);
   await bot.sendMessage(chatId, result.output_text);
+
+  for (const image of result.images ?? []) {
+    const payload = Buffer.from(image.base64Data, 'base64');
+    await bot.sendPhoto(
+      chatId,
+      payload,
+      {
+        caption: image.caption,
+      },
+      {
+        filename: image.fileName,
+        contentType: image.mimeType,
+      },
+    );
+  }
 }

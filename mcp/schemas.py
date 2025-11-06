@@ -111,6 +111,34 @@ class CategoryExpenseBreakdown(BaseModel):
     )
 
 
+class ChartImage(BaseModel):
+    """Base64 encoded chart image returned by the expense summary tool."""
+
+    title: str = Field(description="Short label describing the chart.")
+    mime_type: str = Field(
+        default="image/png",
+        description="MIME type of the encoded image content.",
+        alias="mime_type",
+    )
+    base64_data: str = Field(
+        description="Base64 encoded image bytes without data URL prefix.",
+        alias="base64_data",
+    )
+
+
+class ExpenseSummaryCharts(BaseModel):
+    """Collection of chart images illustrating the expense summary."""
+
+    bar_chart: ChartImage = Field(
+        description="Horizontal bar chart showing expense amount per category.",
+        alias="bar_chart",
+    )
+    pie_chart: ChartImage = Field(
+        description="Pie chart visualising the percentage contribution per category.",
+        alias="pie_chart",
+    )
+
+
 class ExpenseSummaryResult(BaseModel):
     """Summary of expenses grouped by category for a given period."""
 
@@ -129,6 +157,10 @@ class ExpenseSummaryResult(BaseModel):
     category_breakdown: List[CategoryExpenseBreakdown] = Field(
         default_factory=list,
         description="Expenses for each category sorted by amount descending.",
+    )
+    charts: ExpenseSummaryCharts | None = Field(
+        default=None,
+        description="Optional chart visualisations encoded as base64 PNG images.",
     )
 
 

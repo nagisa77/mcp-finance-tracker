@@ -1,11 +1,17 @@
 """记账 MCP 服务端."""
+import base64
 import logging
 from datetime import date, datetime, time, timedelta
+from io import BytesIO
 from typing import Annotated, Literal
 
+import matplotlib
 from mcp.server.fastmcp import Context, FastMCP
 from pydantic import Field as PydanticField, ValidationError
 from sqlalchemy.orm import Session
+
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
 
 from .crud import (
     create_bill,
@@ -30,7 +36,9 @@ from .schemas import (
     CategoryRead,
     CategoryExpenseBreakdown,
     CategoryExpenseDetailResult,
+    ChartImage,
     ExpenseSummaryResult,
+    ExpenseSummaryCharts,
 )
 
 logging.basicConfig(
@@ -42,6 +50,108 @@ logger = logging.getLogger(__name__)
 CURRENT_DATE_TEXT = date.today().isoformat()
 
 mcp = FastMCP("记账服务", host="0.0.0.0", port=8000)
+
+
+def _figure_to_base64(fig) -> str:
+    """Serialize a Matplotlib figure to a base64 encoded PNG string."""
+
+    buffer = BytesIO()
+    fig.savefig(buffer, format="png", dpi=150, bbox_inches="tight")
+    buffer.seek(0)
+    encoded = base64.b64encode(buffer.getvalue()).decode("ascii")
+    buffer.close()
+    plt.close(fig)
+    return encoded
+
+
+def _render_bar_chart(breakdown: list[CategoryExpenseBreakdown]) -> str:
+    """Create a horizontal bar chart for category expenses."""
+
+    categories = [item.category_name for item in breakdown]
+    amounts = [item.total_amount for item in breakdown]
+    figure_height = max(3.5, 1.0 + 0.6 * len(categories))
+    fig, ax = plt.subplots(figsize=(8, figure_height))
+
+    reversed_amounts = amounts[::-1]
+    bars = ax.barh(categories[::-1], reversed_amounts, color="#4C72B0")
+    ax.set_xlabel("金额 (元)")
+    ax.set_title("各分类支出柱状图")
+    ax.grid(axis="x", linestyle="--", alpha=0.3)
+
+    max_amount = max(amounts, default=0)
+    if max_amount <= 0:
+        ax.set_xlim(0, 1)
+    else:
+        ax.set_xlim(0, max_amount * 1.15)
+
+    ax.invert_yaxis()
+    ax.bar_label(bars, labels=[f"{value:.2f}" for value in reversed_amounts], padding=4, fontsize=9)
+
+    fig.tight_layout()
+    return _figure_to_base64(fig)
+
+
+def _render_pie_chart(breakdown: list[CategoryExpenseBreakdown]) -> str:
+    """Create a pie chart for category expenses."""
+
+    categories = [item.category_name for item in breakdown]
+    amounts = [item.total_amount for item in breakdown]
+    total = sum(amounts)
+    fig, ax = plt.subplots(figsize=(6, 6))
+
+    if total <= 0:
+        ax.axis("off")
+        ax.text(0.5, 0.5, "暂无支出数据", ha="center", va="center", fontsize=14)
+        fig.suptitle("各分类支出占比")
+        fig.tight_layout()
+        return _figure_to_base64(fig)
+
+    cmap = plt.get_cmap("tab20")
+    colors = [cmap(i % cmap.N) for i in range(len(categories))]
+
+    def _format_pct(pct: float) -> str:
+        return "" if pct < 1 else f"{pct:.1f}%"
+
+    _wedges, texts, autotexts = ax.pie(
+        amounts,
+        labels=categories,
+        autopct=_format_pct,
+        startangle=90,
+        colors=colors,
+        wedgeprops={"linewidth": 1, "edgecolor": "white"},
+    )
+    for text in texts + list(autotexts):
+        text.set_fontsize(9)
+
+    ax.axis("equal")
+    ax.set_title("各分类支出占比")
+    fig.tight_layout()
+    return _figure_to_base64(fig)
+
+
+def _generate_expense_summary_charts(
+    breakdown: list[CategoryExpenseBreakdown],
+) -> ExpenseSummaryCharts | None:
+    """Generate bar and pie charts for the expense summary."""
+
+    if not breakdown:
+        return None
+
+    bar_chart_base64 = _render_bar_chart(breakdown)
+    pie_chart_base64 = _render_pie_chart(breakdown)
+
+    return ExpenseSummaryCharts(
+        bar_chart=ChartImage(
+            title="各分类支出柱状图",
+            base64_data=bar_chart_base64,
+            mime_type="image/png",
+        ),
+        pie_chart=ChartImage(
+            title="各分类支出占比",
+            base64_data=pie_chart_base64,
+            mime_type="image/png",
+        ),
+    )
 
 
 def _resolve_category(
@@ -329,6 +439,8 @@ async def get_expense_summary(
             CategoryExpenseBreakdown(**item) for item in breakdown_raw
         ]
 
+        charts = _generate_expense_summary_charts(breakdown_models)
+
         return ExpenseSummaryResult(
             period=period,
             reference=reference,
@@ -337,6 +449,7 @@ async def get_expense_summary(
             end=end,
             total_expense=total_expense,
             category_breakdown=breakdown_models,
+            charts=charts,
         )
     except Exception as exc:  # noqa: BLE001
         logger.exception("获取消费小结失败: %s", exc)
