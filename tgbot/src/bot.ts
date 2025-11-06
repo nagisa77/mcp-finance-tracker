@@ -3,7 +3,11 @@ import http from "node:http";
 import https from "node:https";
 import { URL } from "node:url";
 
-import { QUICK_ACTIONS } from "./constants/quickActions";
+import {
+  QUICK_ACTIONS,
+  resolveQuickAction,
+  type QuickActionKey,
+} from "./constants/quickActions";
 import { requireEnvVar } from "./config/env";
 import { openai } from "./openaiClient";
 import { runWorkflowFromParts } from "./services/agent";
@@ -26,11 +30,32 @@ const pendingPhotos = new Map<number, StoredPhoto[]>();
 
 bot.setMyCommands([
   { command: "start", description: "开始使用记账机器人" },
-  { command: "report_recent", description: "生成最近开销报表" },
-  { command: "compare_weekly", description: "对比本周和上周支出" },
-  { command: "compare_monthly", description: "对比本月和上月支出" },
-  { command: "detail", description: "查看分类支出详情" },
+  ...Object.entries(QUICK_ACTIONS).map(([command, action]) => ({
+    command,
+    description: action.title,
+  })),
 ]);
+
+function buildCommandList(): string {
+  return Object.entries(QUICK_ACTIONS)
+    .map(([command, action]) => `  /${command} - ${action.title}`)
+    .join("\n");
+}
+
+async function triggerQuickAction(
+  chatId: number,
+  actionKey: QuickActionKey,
+  telegramUserId: number | string
+) {
+  const action = QUICK_ACTIONS[actionKey];
+  await runWithTyping(chatId, async () => {
+    await sendWorkflowResult(
+      chatId,
+      [{ type: "input_text", text: action.prompt }],
+      telegramUserId
+    );
+  });
+}
 
 bot.on("message", async (msg: Message) => {
   const chatId = msg.chat.id;
@@ -43,37 +68,17 @@ bot.on("message", async (msg: Message) => {
           "请选择需要的功能或直接发送账单信息。",
           "",
           "可用命令：",
-          "  /report  - 生成最近开销报表",
-          "  /compare_weekly - 对比本周和上周支出",
-          "  /compare_monthly - 对比本月和上月支出",
-          "  /detail  - 查看分类支出详情",
+          buildCommandList(),
         ].join("\n")
       );
       return;
     }
-    if (msg.text === "/report") {
-      await runWithTyping(chatId, async () => {
-        await sendWorkflowResult(chatId, [
-          { type: "input_text", text: QUICK_ACTIONS["生成最近开销报表"] },
-        ], telegramUserId);
-      });
-      return;
-    }
-    if (msg.text === "/compare") {
-      await runWithTyping(chatId, async () => {
-        await sendWorkflowResult(chatId, [
-          { type: "input_text", text: QUICK_ACTIONS["对比本周和上周支出"] },
-        ], telegramUserId);
-      });
-      return;
-    }
-    if (msg.text === "/detail") {
-      await runWithTyping(chatId, async () => {
-        await sendWorkflowResult(chatId, [
-          { type: "input_text", text: QUICK_ACTIONS["查看分类支出详情"] },
-        ], telegramUserId);
-      });
-      return;
+    if (typeof msg.text === "string") {
+      const quickAction = resolveQuickAction(msg.text);
+      if (quickAction) {
+        await triggerQuickAction(chatId, quickAction.key, telegramUserId);
+        return;
+      }
     }
 
     if (Array.isArray(msg.photo) && msg.photo.length > 0) {
@@ -117,7 +122,8 @@ bot.on("message", async (msg: Message) => {
     if (typeof msg.text === "string" && msg.text.trim().length > 0) {
       const storedPhotos = pendingPhotos.get(chatId) ?? [];
       const trimmedText = msg.text.trim();
-      const preparedText = QUICK_ACTIONS[trimmedText] ?? trimmedText;
+      const resolvedAction = resolveQuickAction(trimmedText);
+      const preparedText = resolvedAction?.action.prompt ?? trimmedText;
 
       await runWithTyping(chatId, async () => {
         const parts = await buildContentPartsWithFileIds(
