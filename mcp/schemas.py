@@ -112,22 +112,17 @@ class CategoryExpenseBreakdown(BaseModel):
 
 
 class ChartImage(BaseModel):
-    """Chart image uploaded to OpenAI's file store."""
+    """Base64 encoded chart image returned by the expense summary tool."""
 
     title: str = Field(description="Short label describing the chart.")
     mime_type: str = Field(
         default="image/png",
-        description="MIME type of the stored image content.",
+        description="MIME type of the encoded image content.",
         alias="mime_type",
     )
-    file_id: str = Field(
-        description="OpenAI file identifier referencing the uploaded chart image.",
-        alias="file_id",
-    )
-    file_name: str | None = Field(
-        default=None,
-        description="Original filename used when uploading the chart image.",
-        alias="file_name",
+    base64_data: str = Field(
+        description="Base64 encoded image bytes without data URL prefix.",
+        alias="base64_data",
     )
 
 
@@ -165,7 +160,7 @@ class ExpenseSummaryResult(BaseModel):
     )
     charts: ExpenseSummaryCharts | None = Field(
         default=None,
-        description="Optional chart visualisations referenced by OpenAI file identifiers.",
+        description="Optional chart visualisations encoded as base64 PNG images.",
     )
 
 
