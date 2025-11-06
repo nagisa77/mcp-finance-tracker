@@ -48,6 +48,30 @@ type StoredPhoto = {
 
 const pendingPhotos = new Map<number, StoredPhoto[]>();
 
+function withTyping(
+  bot: TelegramBot,
+  chatId: number,
+  action: TelegramBot.ChatAction = "typing"
+) {
+  let alive = true;
+  const tick = () => {
+    if (!alive) return;
+    bot.sendChatAction(chatId, action).catch(() => {});
+  };
+  tick();
+  const timer = setInterval(tick, 4500);
+  return () => {
+    alive = false;
+    clearInterval(timer);
+  };
+}
+
+const QUICK_ACTIONS: Record<string, string> = {
+  生成最近开销报表: "请生成最近开销报表。",
+  对比本周和上周支出: "请对比本周和上周的支出情况，并给出主要差异和建议。",
+  查看分类支出详情: "请提供最近一段时间各分类的支出详情。",
+};
+
 const mcp = hostedMcpTool({
   serverLabel: "finance_mcp",
   serverUrl: "https://www.open-isle.com/mcp-wallet",
@@ -159,6 +183,16 @@ bot.on('message', async (msg: Message) => {
   const chatId = msg.chat.id;
 
   try {
+    if (msg.text === '/start') {
+      await bot.sendMessage(chatId, '请选择需要的功能或直接发送账单信息。', {
+        reply_markup: {
+          keyboard: Object.keys(QUICK_ACTIONS).map((text) => [{ text }]),
+          resize_keyboard: true,
+        },
+      });
+      return;
+    }
+
     if (Array.isArray(msg.photo) && msg.photo.length > 0) {
       const largestPhoto = selectLargestPhoto(msg.photo);
       if (!largestPhoto) {
@@ -172,29 +206,44 @@ bot.on('message', async (msg: Message) => {
       existingPhotos.push(storedPhoto);
       pendingPhotos.set(chatId, existingPhotos);
 
-      const photoCount = existingPhotos.length;
-      await bot.sendMessage(
-        chatId,
-        `已收到图片，目前共${photoCount}张，请继续发送文字描述，我们会一起处理。`
-      );
+      const captionText = typeof msg.caption === 'string' ? msg.caption.trim() : '';
+      if (captionText.length > 0) {
+        const stopTyping = withTyping(bot, chatId);
+        try {
+          const parts = await buildContentPartsWithFileIds(captionText, existingPhotos);
+          pendingPhotos.delete(chatId);
+          const result = await runWorkflowFromParts(parts as any);
+          await bot.sendMessage(chatId, result.output_text);
+        } finally {
+          stopTyping();
+        }
+      } else {
+        const photoCount = existingPhotos.length;
+        await bot.sendMessage(
+          chatId,
+          `已收到图片，目前共${photoCount}张，请继续发送文字描述，我们会一起处理。`
+        );
+      }
       return;
     }
 
     if (typeof msg.text === 'string' && msg.text.trim().length > 0) {
       const storedPhotos = pendingPhotos.get(chatId) ?? [];
-      const processingMessage =
-        storedPhotos.length > 0
-          ? `正在处理...，包含${storedPhotos.length}张图片。`
-          : "正在处理...";
-      await bot.sendMessage(chatId, processingMessage);
-      const parts = await buildContentPartsWithFileIds(msg.text.trim(), storedPhotos);
-      pendingPhotos.delete(chatId);
-    
-      const result = await runWorkflowFromParts(parts as any);
-      await bot.sendMessage(chatId, result.output_text);
+      const trimmedText = msg.text.trim();
+      const preparedText = QUICK_ACTIONS[trimmedText] ?? trimmedText;
+      const stopTyping = withTyping(bot, chatId);
+      try {
+        const parts = await buildContentPartsWithFileIds(preparedText, storedPhotos);
+        pendingPhotos.delete(chatId);
+
+        const result = await runWorkflowFromParts(parts as any);
+        await bot.sendMessage(chatId, result.output_text);
+      } finally {
+        stopTyping();
+      }
       return;
     }
-    
+
 
     await bot.sendMessage(chatId, '目前仅支持接收图片和文本消息。');
   } catch (error) {
