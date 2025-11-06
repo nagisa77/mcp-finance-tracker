@@ -1,132 +1,98 @@
-# mcp-finance-tracker
+# MCP Finance Tracker 💰
 
-一个基于 MCP (Model Context Protocol) 的记账服务，使用 Python 和 MySQL 实现，支持通过 Docker 容器化部署。
+一个基于 **Model Context Protocol (MCP)** 的记账与分析服务，帮助你在自动化工作流中轻松完成账单记录与分类管理。无论是嵌入到智能助手，还是独立运行在服务器上，它都能提供清晰的数据结构与稳定的 API 支撑。
 
-## 功能特性
+## ✨ 项目特色
 
-- ✅ 基于 **FastMCP** 框架实现 MCP 服务端
-- ✅ 使用 **MySQL** 作为数据存储
-- ✅ 支持 **Docker** 和 **docker-compose** 一键部署
-- ✅ 自动初始化数据库表结构和默认分类
-- ✅ 提供两个核心 MCP Tool：
-  1. `get_categories` - 查询所有分类及其描述
-  2. `record_bill` - 记录账单（支持收入和支出）
+- 🤝 **原生 MCP 支持**：采用 FastMCP 框架，实现高性能、低延迟的 MCP 服务端。
+- 🗃️ **结构化账单管理**：使用 MySQL 存储账单与分类数据，开箱即用的默认分类可快速开始记账。
+- 📦 **一键部署**：提供 Docker 镜像与 docker-compose 编排，自动初始化数据库与字体资源。
+- 🧩 **工具即服务**：内置 `get_categories` 与 `record_bill` MCP Tool，可直接被任何兼容客户端调用。
+- 📈 **中文环境友好**：预置 `fonts-noto-cjk`，确保图表与报表在中文环境下无乱码。
 
-## 数据库设计
+## 🧱 技术栈总览
 
-### 分类表 (categories)
-- `id`: 主键
-- `name`: 分类名称（唯一）
-- `description`: 分类描述
+| 模块 | 技术 | 说明 |
+| --- | --- | --- |
+| 服务框架 | FastMCP | 实现 MCP 服务端与工具暴露 |
+| 数据访问 | SQLAlchemy、PyMySQL | ORM 管理模型，连接 MySQL |
+| 配置校验 | Pydantic | 保障配置、请求参数的合法性 |
+| 部署 | Docker、docker-compose | 容器化部署与多服务编排 |
 
-### 账单表 (bills)
-- `id`: 主键
-- `amount`: 金额
-- `type`: 类型（income/expense）
-- `category_id`: 分类ID（外键）
-- `description`: 描述
+## 🚀 构建与部署指南
 
-## 快速开始
+### ✅ 推荐：Docker Compose
 
-### 前置要求
+1. **克隆仓库**
+   ```bash
+   git clone https://github.com/yourusername/mcp-finance-tracker.git
+   cd mcp-finance-tracker
+   ```
+2. **启动服务**
+   ```bash
+   docker-compose up -d
+   ```
+3. **实时查看日志**
+   ```bash
+   docker-compose logs -f mcp_server
+   ```
 
-- Docker 和 Docker Compose
-- Python 3.11+（本地开发时）
+首次启动会自动：
+- 创建 MySQL 数据库与所需表结构。
+- 写入默认分类（餐饮、交通、购物、收入）。
+- 安装中文字体以支持图表渲染。
 
-### 使用 Docker Compose 部署（推荐）
+### 🛠️ 本地运行 / 二次开发
 
-1. 克隆仓库：
-```bash
-git clone https://github.com/yourusername/mcp-finance-tracker.git
-cd mcp-finance-tracker
-```
+1. **准备环境**：确保已安装 Python 3.11+ 与 MySQL。
+2. **安装依赖**
+   ```bash
+   pip install -r requirements.txt
+   ```
+3. **配置环境变量**
+   ```bash
+   cp .env.example .env
+   # 编辑 .env 设置 DB_HOST / DB_PORT / DB_USER / DB_PASSWORD / DB_NAME
+   ```
+4. **启动 MySQL（可选）**
+   ```bash
+   docker-compose up -d mysql
+   ```
+5. **运行服务**
+   ```bash
+   python -m mcp.mcp_server
+   ```
 
-2. 启动服务：
-```bash
-docker-compose up -d
-```
+> 💡 如果需要在本地自定义图表字体，可将 `MCP_CHART_FONT_PATH` 指向对应的 `.ttf` 或 `.otf` 文件。
 
-3. 查看日志：
-```bash
-docker-compose logs -f mcp_server
-```
+## 🔌 MCP 工具能力
 
-### 本地开发
+| Tool 名称 | 用途 | 示例 |
+| --- | --- | --- |
+| `get_categories` | 查询所有记账分类及描述 | `await get_categories()` |
+| `record_bill` | 记录收入/支出账单 | `await record_bill(amount=100.5, type="expense", category_id=1)` |
 
-1. 安装依赖：
-```bash
-pip install -r requirements.txt
-```
+`record_bill` 支持：
+- `amount`：正数金额。
+- `type`：`income` 或 `expense`。
+- `category_id`：可选分类 ID，缺省时记录为未分类。
+- `description`：账单备注。
 
-2. 配置环境变量：
-```bash
-cp .env.example .env
-# 编辑 .env 文件配置数据库连接信息
-```
+## 🗂 数据模型速览
 
-3. 启动 MySQL（如果本地没有）：
-```bash
-docker-compose up -d mysql
-```
+### 分类（`categories`）
+- `id`：主键
+- `name`：唯一分类名
+- `description`：分类描述
 
-4. 运行服务：
-```bash
-python -m mcp.mcp_server
-```
+### 账单（`bills`）
+- `id`：主键
+- `amount`：金额
+- `type`：`income` / `expense`
+- `category_id`：外键关联分类
+- `description`：备注信息
 
-### 图表中文字体
-
-- Docker 镜像会自动安装 `fonts-noto-cjk`，确保 Matplotlib 图表可以正常显示中文。
-- 如果在本地运行出现中文显示为方框的情况，请安装支持中文的字体（如思源黑体、微软雅黑），或设置环境变量 `MCP_CHART_FONT_PATH` 指向 `.ttf`/`.otf` 字体文件路径。
-
-## 使用 MCP Tool
-
-### 1. 查询分类
-
-调用 `get_categories` 工具获取所有可用分类：
-
-```python
-await get_categories()
-```
-
-返回结果：
-```
-当前可用的分类列表：
-1. 【餐饮】
-   描述：日常用餐、外卖等餐饮消费
-2. 【交通】
-   描述：公交、地铁、打车、油费等交通相关费用
-...
-```
-
-### 2. 记录账单
-
-调用 `record_bill` 工具记录账单：
-
-```python
-# 记录支出
-await record_bill(
-    amount=100.50,
-    type="expense",
-    category_id=1,
-    description="午餐",
-)
-
-# 记录收入
-await record_bill(
-    amount=5000.00,
-    type="income",
-    category_id=5,
-    description="本月工资",
-)
-```
-
-- `amount`: 金额（必须为正数）
-- `type`: 账单类型，可选值为 `income` 或 `expense`
-- `category_id`: 分类 ID（可选，省略时记为未分类）
-- `description`: 账单描述（可选）
-
-## 项目结构
+## 📁 项目结构
 
 ```
 mcp-finance-tracker/
@@ -134,38 +100,17 @@ mcp-finance-tracker/
 │   ├── __init__.py          # MCP 包初始化
 │   ├── mcp_server.py        # MCP 服务端主程序
 │   ├── crud.py              # 数据库 CRUD 操作
-│   ├── config.py            # 配置文件
+│   ├── config.py            # 配置与环境变量
 │   ├── schemas.py           # Pydantic 数据模型
 │   ├── models.py            # SQLAlchemy 数据模型
-│   └── database.py          # 数据库会话管理模块
-├── requirements.txt         # Python 依赖
+│   └── database.py          # 数据库会话管理
+├── requirements.txt         # Python 依赖列表
 ├── Dockerfile               # Docker 镜像定义
-├── docker-compose.yml       # Docker Compose 配置
+├── docker-compose.yml       # docker-compose 配置
 ├── .env.example             # 环境变量示例
-├── .gitignore               # Git 忽略文件
 └── README.md                # 项目说明
 ```
 
-系统启动时会自动创建数据库表并填充默认分类（餐饮、交通、购物、收入），无需手动执行 SQL 脚本。
+## 📜 许可证
 
-## 配置说明
-
-环境变量配置（通过 `.env` 文件或 docker-compose 环境变量）：
-
-- `DB_HOST`: 数据库主机地址
-- `DB_PORT`: 数据库端口
-- `DB_USER`: 数据库用户名
-- `DB_PASSWORD`: 数据库密码
-- `DB_NAME`: 数据库名称
-
-## 技术栈
-
-- **MCP**: 官方 MCP 框架 (mcp>=1.19.0)
-- **SQLAlchemy**: ORM 与表结构管理
-- **Pydantic**: 数据验证
-- **PyMySQL**: MySQL 数据库驱动
-- **Docker**: 容器化部署
-
-## 许可证
-
-MIT License 
+MIT License
