@@ -18,6 +18,8 @@ const MCP_BASE_CONFIG = {
 };
 
 const AGENT_INSTRUCTIONS = `
+注意: 严禁使用任何markdown格式和符号
+
 首先，务必调用 get_categories 工具，以获取当前可用的账单分类与类型信息。
 仔细分析用户输入内容——如包含账单相关信息（无论是图片或文字），需将图片中的文字内容解析出来并用作账单明细。
 若用户输入的是单次消费，只需调用 record_bill 工具进行记录；
@@ -45,7 +47,7 @@ function createAgent(userId: string): Agent {
     tools: [mcpTool],
     model: 'gpt-4o',
     modelSettings: {
-      temperature: 0.7,
+      temperature: 0.3,
       topP: 1,
       maxTokens: 2048,
       toolChoice: 'auto',
