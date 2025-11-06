@@ -1,5 +1,4 @@
 """记账 MCP 服务端."""
-import base64
 import logging
 from datetime import date, datetime, time, timedelta
 from io import BytesIO
@@ -13,6 +12,9 @@ from sqlalchemy.orm import Session
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
+from openai import OpenAI
+
+from . import config
 from .crud import (
     create_bill,
     ensure_default_categories,
@@ -52,19 +54,38 @@ CURRENT_DATE_TEXT = date.today().isoformat()
 mcp = FastMCP("记账服务", host="0.0.0.0", port=8000)
 
 
-def _figure_to_base64(fig) -> str:
-    """Serialize a Matplotlib figure to a base64 encoded PNG string."""
+_openai_client: OpenAI | None = None
+
+
+def _get_openai_client() -> OpenAI:
+    """Lazily instantiate the OpenAI client using the configured API key."""
+
+    global _openai_client
+    if _openai_client is not None:
+        return _openai_client
+
+    if not config.OPENAI_API_KEY:
+        raise RuntimeError(
+            "OPENAI_API_KEY 未配置，无法上传消费图表。"
+        )
+
+    _openai_client = OpenAI(api_key=config.OPENAI_API_KEY)
+    return _openai_client
+
+
+def _figure_to_png_bytes(fig) -> bytes:
+    """Serialize a Matplotlib figure to PNG bytes."""
 
     buffer = BytesIO()
     fig.savefig(buffer, format="png", dpi=150, bbox_inches="tight")
     buffer.seek(0)
-    encoded = base64.b64encode(buffer.getvalue()).decode("ascii")
+    png_bytes = buffer.getvalue()
     buffer.close()
     plt.close(fig)
-    return encoded
+    return png_bytes
 
 
-def _render_bar_chart(breakdown: list[CategoryExpenseBreakdown]) -> str:
+def _render_bar_chart(breakdown: list[CategoryExpenseBreakdown]) -> bytes:
     """Create a horizontal bar chart for category expenses."""
 
     categories = [item.category_name for item in breakdown]
@@ -88,10 +109,10 @@ def _render_bar_chart(breakdown: list[CategoryExpenseBreakdown]) -> str:
     ax.bar_label(bars, labels=[f"{value:.2f}" for value in reversed_amounts], padding=4, fontsize=9)
 
     fig.tight_layout()
-    return _figure_to_base64(fig)
+    return _figure_to_png_bytes(fig)
 
 
-def _render_pie_chart(breakdown: list[CategoryExpenseBreakdown]) -> str:
+def _render_pie_chart(breakdown: list[CategoryExpenseBreakdown]) -> bytes:
     """Create a pie chart for category expenses."""
 
     categories = [item.category_name for item in breakdown]
@@ -104,7 +125,7 @@ def _render_pie_chart(breakdown: list[CategoryExpenseBreakdown]) -> str:
         ax.text(0.5, 0.5, "暂无支出数据", ha="center", va="center", fontsize=14)
         fig.suptitle("各分类支出占比")
         fig.tight_layout()
-        return _figure_to_base64(fig)
+        return _figure_to_png_bytes(fig)
 
     cmap = plt.get_cmap("tab20")
     colors = [cmap(i % cmap.N) for i in range(len(categories))]
@@ -126,7 +147,31 @@ def _render_pie_chart(breakdown: list[CategoryExpenseBreakdown]) -> str:
     ax.axis("equal")
     ax.set_title("各分类支出占比")
     fig.tight_layout()
-    return _figure_to_base64(fig)
+    return _figure_to_png_bytes(fig)
+
+
+def _upload_chart_image(
+    *,
+    title: str,
+    image_bytes: bytes,
+    filename_suffix: str,
+) -> ChartImage:
+    """Upload the rendered chart to OpenAI and return the file reference."""
+
+    client = _get_openai_client()
+    filename = f"expense-summary-{filename_suffix}.png"
+    with BytesIO(image_bytes) as buffer:
+        upload = client.files.create(
+            file=(filename, buffer, "image/png"),
+            purpose="vision",
+        )
+
+    return ChartImage(
+        title=title,
+        mime_type="image/png",
+        file_id=upload.id,
+        file_name=filename,
+    )
 
 
 def _generate_expense_summary_charts(
@@ -137,20 +182,23 @@ def _generate_expense_summary_charts(
     if not breakdown:
         return None
 
-    bar_chart_base64 = _render_bar_chart(breakdown)
-    pie_chart_base64 = _render_pie_chart(breakdown)
+    bar_chart_bytes = _render_bar_chart(breakdown)
+    pie_chart_bytes = _render_pie_chart(breakdown)
+
+    bar_chart = _upload_chart_image(
+        title="各分类支出柱状图",
+        image_bytes=bar_chart_bytes,
+        filename_suffix="bar",
+    )
+    pie_chart = _upload_chart_image(
+        title="各分类支出占比",
+        image_bytes=pie_chart_bytes,
+        filename_suffix="pie",
+    )
 
     return ExpenseSummaryCharts(
-        bar_chart=ChartImage(
-            title="各分类支出柱状图",
-            base64_data=bar_chart_base64,
-            mime_type="image/png",
-        ),
-        pie_chart=ChartImage(
-            title="各分类支出占比",
-            base64_data=pie_chart_base64,
-            mime_type="image/png",
-        ),
+        bar_chart=bar_chart,
+        pie_chart=pie_chart,
     )
 
 

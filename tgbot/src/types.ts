@@ -14,9 +14,9 @@ export type InputPartWithFileId =
 export type TelegramPhoto = PhotoSize;
 
 export type WorkflowImage = {
-  fileName: string;
+  fileId: string;
   mimeType: string;
-  base64Data: string;
+  fileName?: string;
   caption?: string;
 };
 

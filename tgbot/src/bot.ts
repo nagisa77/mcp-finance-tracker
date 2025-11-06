@@ -124,18 +124,30 @@ async function sendWorkflowResult(chatId: number, parts: InputPartWithFileId[]) 
   const result: WorkflowResult = await runWorkflowFromParts(parts);
   await bot.sendMessage(chatId, result.output_text);
 
-  for (const image of result.images ?? []) {
-    const payload = Buffer.from(image.base64Data, 'base64');
-    await bot.sendPhoto(
-      chatId,
-      payload,
-      {
-        caption: image.caption,
-      },
-      {
-        filename: image.fileName,
-        contentType: image.mimeType,
-      },
-    );
+  const images = result.images ?? [];
+  for (const [index, image] of images.entries()) {
+    try {
+      const payload = await downloadWorkflowImage(image.fileId);
+      const filename = image.fileName ?? `expense-summary-${index + 1}.png`;
+      await bot.sendPhoto(
+        chatId,
+        payload,
+        {
+          caption: image.caption,
+        },
+        {
+          filename,
+          contentType: image.mimeType,
+        },
+      );
+    } catch (error) {
+      console.error('发送图表图片失败:', error);
+    }
   }
+}
+
+async function downloadWorkflowImage(fileId: string): Promise<Buffer> {
+  const response = await openai.files.content(fileId);
+  const arrayBuffer = await response.arrayBuffer();
+  return Buffer.from(arrayBuffer);
 }

@@ -15,6 +15,8 @@ DATABASE_URL = os.getenv(
     f"mysql+pymysql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}?charset=utf8mb4",
 )
 
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+
 DEFAULT_CATEGORIES = [
     {"name": "外卖", "description": "点外卖相关支出"},
     {"name": "生活用品", "description": "日常生活用品的消费，如洗衣液、纸巾等"},

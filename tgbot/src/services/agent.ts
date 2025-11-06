@@ -148,36 +148,26 @@ function extractExpenseSummaryCharts(newItems: any[]): WorkflowImage[] {
         continue;
       }
 
-      const base64Value =
-        chart.base64_data ?? chart.base64Data ?? chart.image_base64 ?? chart.imageBase64;
-      if (typeof base64Value !== 'string' || base64Value.trim().length === 0) {
+      const fileId = chart.file_id ?? chart.fileId;
+      if (typeof fileId !== 'string' || fileId.trim().length === 0) {
         continue;
       }
 
       const mimeType: string = chart.mime_type ?? chart.mimeType ?? 'image/png';
       const caption =
         typeof chart.title === 'string' && chart.title.trim().length > 0 ? chart.title : undefined;
+      const fileName = chart.file_name ?? chart.fileName ?? `expense-summary-${suffix}.png`;
 
       collected.push({
-        fileName: `expense-summary-${suffix}.png`,
+        fileId: fileId.trim(),
         mimeType,
-        base64Data: normalizeBase64(base64Value),
+        fileName,
         caption,
       });
     }
   }
 
   return collected;
-}
-
-function normalizeBase64(value: string): string {
-  const trimmed = value.trim();
-  if (!trimmed.startsWith('data:')) {
-    return trimmed;
-  }
-
-  const commaIndex = trimmed.indexOf(',');
-  return commaIndex === -1 ? trimmed : trimmed.slice(commaIndex + 1);
 }
 
 function extractStructuredData(output: any): any | null {
