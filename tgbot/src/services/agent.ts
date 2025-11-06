@@ -2,7 +2,9 @@ import { Agent, Runner, hostedMcpTool, withTrace } from '@openai/agents';
 
 import type { InputPartWithFileId, WorkflowImage, WorkflowResult } from '../types';
 
-const mcp = hostedMcpTool({
+const TELEGRAM_USER_ID_HEADER = 'x-telegram-user-id';
+
+const MCP_BASE_CONFIG = {
   serverLabel: 'finance_mcp',
   serverUrl: 'https://www.open-isle.com/mcp-wallet',
   allowedTools: [
@@ -12,12 +14,10 @@ const mcp = hostedMcpTool({
     'get_expense_summary',
     'get_category_expense_detail',
   ],
-  requireApproval: 'never',
-});
+  requireApproval: 'never' as const,
+};
 
-const agent = new Agent({
-  name: 'finance_agent',
-  instructions: `
+const AGENT_INSTRUCTIONS = `
 首先，务必调用 get_categories 工具，以获取当前可用的账单分类与类型信息。
 仔细分析用户输入内容——如包含账单相关信息（无论是图片或文字），需将图片中的文字内容解析出来并用作账单明细。
 若用户输入的是单次消费，只需调用 record_bill 工具进行记录；
@@ -28,17 +28,30 @@ const agent = new Agent({
 请将每笔账单的详细内容及其对应类型在输出中完整展示。
 
 你是聊天机器人，最终的回复务必使用自然、清晰的文本（不要使用 markdown 格式和符号）。如果包含url，不用贴出具体url，提醒用户“可以看看相关图片”，因为url已经自动发出了
-`,
-  tools: [mcp],
-  model: 'gpt-4o',
-  modelSettings: {
-    temperature: 0.7,
-    topP: 1,
-    maxTokens: 2048,
-    toolChoice: 'auto',
-    store: true,
-  },
-});
+`;
+
+function createAgent(userId: string): Agent {
+  const mcpTool = hostedMcpTool({
+    ...MCP_BASE_CONFIG,
+    headers: {
+      [TELEGRAM_USER_ID_HEADER]: userId,
+    },
+  });
+
+  return new Agent({
+    name: 'finance_agent',
+    instructions: AGENT_INSTRUCTIONS,
+    tools: [mcpTool],
+    model: 'gpt-4o',
+    modelSettings: {
+      temperature: 0.7,
+      topP: 1,
+      maxTokens: 2048,
+      toolChoice: 'auto',
+      store: true,
+    },
+  });
+}
 
 function createRunner(): Runner {
   return new Runner({
@@ -50,7 +63,10 @@ function createRunner(): Runner {
   });
 }
 
-export async function runWorkflowFromParts(contentParts: InputPartWithFileId[]) {
+export async function runWorkflowFromParts(
+  contentParts: InputPartWithFileId[],
+  telegramUserId: number | string
+) {
   if (!process.env.OPENAI_API_KEY) {
     throw new Error('Missing OPENAI_API_KEY');
   }
@@ -60,6 +76,7 @@ export async function runWorkflowFromParts(contentParts: InputPartWithFileId[]) 
   }
 
   const runner = createRunner();
+  const agent = createAgent(String(telegramUserId));
 
   return await withTrace('finance_agent run', async () => {
     const preview = JSON.stringify(

@@ -189,20 +189,23 @@ python
 ```python
 # 在 Python 交互环境中测试
 from mcp.database import session_scope
-from mcp.crud import list_categories, get_category_by_name, create_bill
+from mcp.crud import ensure_default_categories, list_categories, get_category_by_name, create_bill
 from mcp.schemas import BillCreate
 
 with session_scope() as session:
+    user_id = "123456"
+    ensure_default_categories(session, user_id)
     # 测试查询分类
-    categories = list_categories(session)
+    categories = list_categories(session, user_id)
     print(categories)
 
     # 测试添加账单
-    category = get_category_by_name(session, "餐饮")
+    category = get_category_by_name(session, "餐饮", user_id)
     bill = create_bill(
         session,
-        BillCreate(amount=100.0, category="餐饮", description="测试"),
+        BillCreate(amount=100.0, type="expense", category_id=category.id, description="测试"),
         category,
+        user_id,
     )
     print(bill)
 ```

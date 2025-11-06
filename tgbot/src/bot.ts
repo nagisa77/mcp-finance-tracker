@@ -33,6 +33,7 @@ bot.setMyCommands([
 
 bot.on("message", async (msg: Message) => {
   const chatId = msg.chat.id;
+  const telegramUserId = msg.from?.id ?? chatId;
   try {
     if (msg.text === "/start") {
       await bot.sendMessage(chatId, "请选择需要的功能或直接发送账单信息。", {
@@ -47,7 +48,7 @@ bot.on("message", async (msg: Message) => {
       await runWithTyping(chatId, async () => {
         await sendWorkflowResult(chatId, [
           { type: "input_text", text: QUICK_ACTIONS["生成最近开销报表"] },
-        ]);
+        ], telegramUserId);
       });
       return;
     }
@@ -55,7 +56,7 @@ bot.on("message", async (msg: Message) => {
       await runWithTyping(chatId, async () => {
         await sendWorkflowResult(chatId, [
           { type: "input_text", text: QUICK_ACTIONS["对比本周和上周支出"] },
-        ]);
+        ], telegramUserId);
       });
       return;
     }
@@ -63,7 +64,7 @@ bot.on("message", async (msg: Message) => {
       await runWithTyping(chatId, async () => {
         await sendWorkflowResult(chatId, [
           { type: "input_text", text: QUICK_ACTIONS["查看分类支出详情"] },
-        ]);
+        ], telegramUserId);
       });
       return;
     }
@@ -94,7 +95,7 @@ bot.on("message", async (msg: Message) => {
             existingPhotos
           );
           pendingPhotos.delete(chatId);
-          await sendWorkflowResult(chatId, parts);
+          await sendWorkflowResult(chatId, parts, telegramUserId);
         });
       } else {
         const photoCount = existingPhotos.length;
@@ -118,7 +119,7 @@ bot.on("message", async (msg: Message) => {
           storedPhotos
         );
         pendingPhotos.delete(chatId);
-        await sendWorkflowResult(chatId, parts);
+        await sendWorkflowResult(chatId, parts, telegramUserId);
       });
       return;
     }
@@ -147,9 +148,13 @@ async function runWithTyping(chatId: number, action: () => Promise<void>) {
 
 async function sendWorkflowResult(
   chatId: number,
-  parts: InputPartWithFileId[]
+  parts: InputPartWithFileId[],
+  telegramUserId: number | string
 ) {
-  const result: WorkflowResult = await runWorkflowFromParts(parts);
+  const result: WorkflowResult = await runWorkflowFromParts(
+    parts,
+    telegramUserId
+  );
   for (const images of result.images ?? []) {
     try {
       for (const image of images) {

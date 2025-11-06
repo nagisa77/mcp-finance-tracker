@@ -115,6 +115,34 @@ mcp = FastMCP("记账服务", host="0.0.0.0", port=8000)
 
 _cos_client: CosS3Client | None = None
 
+TELEGRAM_USER_ID_HEADER = "x-telegram-user-id"
+
+
+def _require_user_id(ctx: Context | None) -> str:
+    """从请求上下文中解析 Telegram 用户 ID."""
+
+    if ctx is None:
+        raise ValueError("缺少请求上下文，无法识别用户。")
+
+    try:
+        request_context = ctx.request_context
+    except ValueError as exc:  # noqa: TRY003
+        raise ValueError("当前请求上下文不可用，无法识别用户。") from exc
+
+    request = getattr(request_context, "request", None)
+    if request is None:
+        raise ValueError("无法获取请求信息，缺少用户标识。")
+
+    header_value = request.headers.get(TELEGRAM_USER_ID_HEADER)
+    if not header_value:
+        raise ValueError("请求缺少 Telegram 用户标识。")
+
+    user_id = header_value.strip()
+    if not user_id:
+        raise ValueError("请求缺少有效的 Telegram 用户标识。")
+
+    return user_id
+
 
 def _figure_to_png_bytes(fig) -> bytes:
     """Serialize a Matplotlib figure to PNG bytes."""
@@ -307,14 +335,14 @@ def _generate_expense_summary_charts(
 
 
 def _resolve_category(
-    session: Session, category_id: int | None
+    session: Session, category_id: int | None, user_id: str
 ) -> tuple[Category | None, str]:
     """根据 ID 解析分类并返回显示文本."""
 
     category_obj: Category | None = None
     category_display = "未分类"
     if category_id is not None:
-        category_obj = get_category_by_id(session, category_id)
+        category_obj = get_category_by_id(session, category_id, user_id)
         if category_obj is not None:
             category_display = category_obj.name
         else:
@@ -394,10 +422,11 @@ def _unique_category_ids(category_ids: list[int]) -> list[int]:
 )
 async def get_categories(ctx: Context | None = None) -> CategoryListResult:
     """获取当前所有分类及其描述."""
-    _ = ctx
+    user_id = _require_user_id(ctx)
     try:
         with session_scope() as session:
-            categories = list_categories(session)
+            ensure_default_categories(session, user_id)
+            categories = list_categories(session, user_id)
 
         category_models = [
             CategoryRead.model_validate(category) for category in categories
@@ -438,7 +467,7 @@ async def record_bill(
     ctx: Context | None = None,
 ) -> BillRecordResult:
     """记录一笔账单."""
-    _ = ctx
+    user_id = _require_user_id(ctx)
     try:
         bill_data = BillCreate(
             amount=amount,
@@ -452,10 +481,11 @@ async def record_bill(
 
     try:
         with session_scope() as session:
+            ensure_default_categories(session, user_id)
             category_obj, category_display = _resolve_category(
-                session, bill_data.category_id
+                session, bill_data.category_id, user_id
             )
-            bill = create_bill(session, bill_data, category_obj)
+            bill = create_bill(session, bill_data, category_obj, user_id)
             bill_model = BillRead.model_validate(bill)
         return BillRecordResult(
             message="💾 账单记录成功！",
@@ -505,7 +535,7 @@ async def record_multiple_bills(
 ) -> BillBatchRecordResult:
     """批量记录账单."""
 
-    _ = ctx
+    user_id = _require_user_id(ctx)
     try:
         bill_inputs: list[BillCreate] = []
         for index, payload in enumerate(bills, start=1):
@@ -522,12 +552,13 @@ async def record_multiple_bills(
 
     try:
         with session_scope() as session:
+            ensure_default_categories(session, user_id)
             records: list[BillRecordResult] = []
             for bill_data in bill_inputs:
                 category_obj, category_display = _resolve_category(
-                    session, bill_data.category_id
+                    session, bill_data.category_id, user_id
                 )
-                bill = create_bill(session, bill_data, category_obj)
+                bill = create_bill(session, bill_data, category_obj, user_id)
                 bill_model = BillRead.model_validate(bill)
                 records.append(
                     BillRecordResult(
@@ -576,7 +607,7 @@ async def get_expense_summary(
 ) -> ExpenseSummaryResult:
     """按分类汇总指定时间范围内的消费数据."""
 
-    _ = ctx
+    user_id = _require_user_id(ctx)
     try:
         start, end, label = _parse_period(period, reference)
     except ValueError as exc:
@@ -584,8 +615,10 @@ async def get_expense_summary(
 
     try:
         with session_scope() as session:
-            total_expense = get_total_expense(session, start, end)
-            breakdown_raw = get_expense_summary_by_category(session, start, end)
+            total_expense = get_total_expense(session, start, end, user_id)
+            breakdown_raw = get_expense_summary_by_category(
+                session, start, end, user_id
+            )
 
         breakdown_models = [
             CategoryExpenseBreakdown(**item) for item in breakdown_raw
@@ -645,7 +678,7 @@ async def get_category_expense_detail(
 ) -> CategoryExpenseDetailResult:
     """查询指定分类在某个时间范围内的消费明细."""
 
-    _ = ctx
+    user_id = _require_user_id(ctx)
     try:
         start, end, label = _parse_period(period, reference)
     except ValueError as exc:
@@ -655,7 +688,8 @@ async def get_category_expense_detail(
 
     try:
         with session_scope() as session:
-            categories = get_categories_by_ids(session, normalized_ids)
+            ensure_default_categories(session, user_id)
+            categories = get_categories_by_ids(session, normalized_ids, user_id)
             found_ids = {category.id for category in categories}
             missing = [cid for cid in normalized_ids if cid not in found_ids]
             if missing:
@@ -667,10 +701,10 @@ async def get_category_expense_detail(
                 CategoryRead.model_validate(category) for category in categories
             ]
             total_expense = get_total_expense_for_categories(
-                session, start, end, normalized_ids
+                session, start, end, normalized_ids, user_id
             )
             bills = get_category_filtered_expenses(
-                session, start, end, normalized_ids
+                session, start, end, normalized_ids, user_id
             )
 
             bill_details = [
@@ -707,8 +741,6 @@ def main() -> None:
     """主函数."""
     try:
         init_database()
-        with session_scope() as session:
-            ensure_default_categories(session)
 
         logger.info("记账 MCP 服务启动成功")
         mcp.run(transport="streamable-http")

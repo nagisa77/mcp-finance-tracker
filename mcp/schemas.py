@@ -11,6 +11,7 @@ class CategoryRead(BaseModel):
     """分类输出模型."""
 
     id: int
+    user_id: str
     name: str
     description: Optional[str] = None
 
@@ -59,6 +60,7 @@ class BillRead(BaseModel):
     """Representation of a recorded bill."""
 
     id: int
+    user_id: str
     amount: float
     type: BillType
     description: Optional[str] = Field(default=None, description="Description of the bill.")

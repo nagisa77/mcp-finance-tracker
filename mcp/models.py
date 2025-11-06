@@ -11,6 +11,7 @@ from sqlalchemy import (
     ForeignKey,
     Integer,
     String,
+    UniqueConstraint,
     func,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
@@ -24,9 +25,13 @@ class Category(Base):
     """账单分类."""
 
     __tablename__ = "categories"
+    __table_args__ = (
+        UniqueConstraint("user_id", "name", name="uq_category_user_name"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    name: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    user_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(64), nullable=False)
     description: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
 
     bills: Mapped[List["Bill"]] = relationship(back_populates="category", cascade="all,delete")
@@ -48,6 +53,7 @@ class Bill(Base):
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     amount: Mapped[float] = mapped_column(Float, nullable=False)
     type: Mapped[BillType] = mapped_column(
         SAEnum(BillType, name="bill_type", native_enum=False), nullable=False
