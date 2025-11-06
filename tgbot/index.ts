@@ -186,17 +186,31 @@ bot.setMyCommands([
   { command: "detail", description: "查看分类支出详情" },
 ]);
 
-bot.onText(/\/report/, (msg) => {
-  bot.sendMessage(msg.chat.id, QUICK_ACTIONS["生成最近开销报表"]);
+bot.onText(/\/report/, async (msg) => {
+  const chatId = msg.chat.id;
+  const stopTyping = withTyping(bot, chatId);
+  try {
+    const result = await runWorkflowFromParts([
+      { type: "input_text", text: QUICK_ACTIONS["生成最近开销报表"] },
+    ]);
+    bot.sendMessage(chatId, result.output_text);
+  } finally {
+    stopTyping();
+  }
 });
 
-bot.onText(/\/compare/, (msg) => {
-  bot.sendMessage(msg.chat.id, QUICK_ACTIONS["对比本周和上周支出"]);
-});
-
-bot.onText(/\/detail/, (msg) => {
-  bot.sendMessage(msg.chat.id, QUICK_ACTIONS["查看分类支出详情"]);
-});
+bot.onText(/\/compare/, async (msg) => {
+  const chatId = msg.chat.id;
+  const stopTyping = withTyping(bot, chatId);
+  try {
+    const result = await runWorkflowFromParts([
+      { type: "input_text", text: QUICK_ACTIONS["对比本周和上周支出"] },
+    ]);
+    await bot.sendMessage(chatId, result.output_text);
+  } finally {
+    stopTyping();
+  }
+}); 
 
 bot.on('message', async (msg: Message) => {
   const chatId = msg.chat.id;
