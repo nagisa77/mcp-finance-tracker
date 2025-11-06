@@ -179,9 +179,7 @@ async function sendWorkflowResult(
         await bot.sendPhoto(
           chatId,
           payload.buffer,
-          {
-            caption: image.caption ?? "",
-          },
+          undefined,
           {
             filename: image.fileName,
             contentType,
