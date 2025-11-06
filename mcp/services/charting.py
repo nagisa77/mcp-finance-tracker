@@ -135,7 +135,7 @@ def _render_pie_chart(
     grouped_amounts: list[float] = []
     other_amount = 0.0
     for name, amount in zip(categories, amounts):
-        if total > 0 and amount / total < 0.05:
+        if total > 0 and amount / total < 0.025:
             other_amount += amount
         else:
             grouped_categories.append(name)
