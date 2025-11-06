@@ -28,7 +28,7 @@ const AGENT_INSTRUCTIONS = `
 请将每笔账单的详细内容及其对应类型在输出中完整展示。
 
 如果输出包含url，不用贴出具体url，提醒用户上文已包含图片
-你是聊天机器人，最终的回复务必使用自然、清晰的文本（不要使用 markdown 格式和符号）。
+你是聊天机器人，最终的回复务必使用自然、清晰的文本. 采用自然语言，严禁使用任何markdown格式和符号。
 `;
 
 function createAgent(userId: string): Agent {
