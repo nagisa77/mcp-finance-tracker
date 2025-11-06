@@ -12,6 +12,7 @@ from matplotlib import font_manager
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
 
+from ..config import OTHER_CATEGORY_COLOR, UNCATEGORIZED_CATEGORY_COLOR
 from ..schemas import CategoryExpenseBreakdown, ChartImage
 from .cos_storage import upload_chart_image
 
@@ -85,13 +86,15 @@ def _render_bar_chart(
     breakdown: Iterable[CategoryExpenseBreakdown],
     period_label: str,
 ) -> bytes:
-    categories = [item.category_name for item in breakdown]
-    amounts = [item.total_amount for item in breakdown]
+    breakdown_list = list(breakdown)
+    categories = [item.category_name for item in breakdown_list]
+    amounts = [item.total_amount for item in breakdown_list]
+    colors = [item.color or UNCATEGORIZED_CATEGORY_COLOR for item in breakdown_list]
     figure_width = max(6.0, 0.9 * len(categories))
     fig, ax = plt.subplots(figsize=(figure_width, 5))
 
     x_positions = range(len(categories))
-    bars = ax.bar(x_positions, amounts, color="#4C72B0")
+    bars = ax.bar(x_positions, amounts, color=colors)
     ax.set_ylabel("金额 (元)")
     ax.set_title(f"各分类支出柱状图（{period_label}）")
     ax.grid(axis="y", linestyle="--", alpha=0.3)
@@ -119,8 +122,10 @@ def _render_pie_chart(
     breakdown: Iterable[CategoryExpenseBreakdown],
     period_label: str,
 ) -> bytes:
-    categories = [item.category_name for item in breakdown]
-    amounts = [item.total_amount for item in breakdown]
+    breakdown_list = list(breakdown)
+    categories = [item.category_name for item in breakdown_list]
+    amounts = [item.total_amount for item in breakdown_list]
+    colors = [item.color or UNCATEGORIZED_CATEGORY_COLOR for item in breakdown_list]
     total = sum(amounts)
     fig, ax = plt.subplots(figsize=(6, 6))
 
@@ -133,22 +138,23 @@ def _render_pie_chart(
 
     grouped_categories: list[str] = []
     grouped_amounts: list[float] = []
+    grouped_colors: list[str] = []
     other_amount = 0.0
-    for name, amount in zip(categories, amounts):
+    for name, amount, color in zip(categories, amounts, colors):
         if total > 0 and amount / total < 0.025:
             other_amount += amount
         else:
             grouped_categories.append(name)
             grouped_amounts.append(amount)
+            grouped_colors.append(color)
     if other_amount > 0:
-        grouped_categories.append("Other")
+        grouped_categories.append("其他")
         grouped_amounts.append(other_amount)
+        grouped_colors.append(OTHER_CATEGORY_COLOR)
 
     categories = grouped_categories
     amounts = grouped_amounts
-
-    cmap = plt.get_cmap("tab20")
-    colors = [cmap(i % cmap.N) for i in range(len(categories))]
+    colors = grouped_colors
 
     def _format_pct(pct: float) -> str:
         return "" if pct < 1 else f"{pct:.1f}%"

@@ -14,6 +14,7 @@ class CategoryRead(BaseModel):
     user_id: str
     name: str
     description: Optional[str] = None
+    color: str
 
     class Config:
         from_attributes = True
@@ -110,6 +111,9 @@ class CategoryExpenseBreakdown(BaseModel):
         description=(
             "Contribution of this category to the total expense percentage (0-100)."
         )
+    )
+    color: Optional[str] = Field(
+        default=None, description="Display color associated with the category."
     )
 
 

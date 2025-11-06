@@ -5,7 +5,7 @@ from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.orm import sessionmaker, Session
 import logging
 
-from .config import DATABASE_URL
+from .config import CATEGORY_COLOR_PALETTE, DATABASE_URL, DEFAULT_CATEGORIES
 
 logger = logging.getLogger(__name__)
 
@@ -51,6 +51,7 @@ def _apply_user_id_migrations() -> None:
 
         if "categories" in table_names:
             _ensure_category_user_columns(connection)
+            _ensure_category_color_columns(connection)
         if "bills" in table_names:
             _ensure_bill_user_columns(connection)
 
@@ -96,6 +97,71 @@ def _ensure_category_user_columns(connection) -> None:
             text("CREATE INDEX ix_categories_user_id ON categories (user_id)")
         )
 
+
+def _ensure_category_color_columns(connection) -> None:
+    """为分类表添加颜色字段并填充默认颜色."""
+
+    inspector = inspect(connection)
+    dialect_name = connection.dialect.name
+    columns = {col["name"] for col in inspector.get_columns("categories")}
+    if "color" not in columns:
+        connection.execute(text("ALTER TABLE categories ADD COLUMN color VARCHAR(7)"))
+        inspector = inspect(connection)
+
+    result = connection.execute(
+        text("SELECT id, name, color FROM categories ORDER BY id")
+    ).mappings().all()
+    if not result:
+        return
+
+    default_color_map = {
+        item["name"]: item.get("color")
+        for item in DEFAULT_CATEGORIES
+        if item.get("color")
+    }
+
+    used_colors = {
+        row["color"]
+        for row in result
+        if row["color"] is not None and row["color"].strip() != ""
+    }
+    palette_cycle = [color for color in CATEGORY_COLOR_PALETTE if color not in used_colors]
+
+    def _next_color() -> str:
+        nonlocal palette_cycle
+        if not palette_cycle:
+            palette_cycle = list(CATEGORY_COLOR_PALETTE)
+        color = palette_cycle.pop(0)
+        while color in used_colors and palette_cycle:
+            color = palette_cycle.pop(0)
+        return color if color not in used_colors else CATEGORY_COLOR_PALETTE[0]
+
+    for row in result:
+        if row["color"] is not None and row["color"].strip() != "":
+            continue
+
+        desired_color = default_color_map.get(row["name"])
+        if desired_color and desired_color not in used_colors:
+            color_value = desired_color
+        else:
+            color_value = _next_color()
+        connection.execute(
+            text("UPDATE categories SET color = :color WHERE id = :id"),
+            {"color": color_value, "id": row["id"]},
+        )
+        used_colors.add(color_value)
+
+    connection.execute(
+        text(
+            "UPDATE categories SET color = :fallback WHERE color IS NULL OR color = ''"
+        ),
+        {"fallback": CATEGORY_COLOR_PALETTE[0]},
+    )
+
+    if dialect_name.startswith("mysql"):
+        connection.execute(
+            text("ALTER TABLE categories MODIFY COLUMN color VARCHAR(7) NOT NULL")
+        )
 
 def _ensure_bill_user_columns(connection) -> None:
     """为账单表添加 user_id 相关结构."""
