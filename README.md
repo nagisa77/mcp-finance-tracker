@@ -74,6 +74,11 @@ docker-compose up -d mysql
 python -m mcp.mcp_server
 ```
 
+### 图表中文字体
+
+- Docker 镜像会自动安装 `fonts-noto-cjk`，确保 Matplotlib 图表可以正常显示中文。
+- 如果在本地运行出现中文显示为方框的情况，请安装支持中文的字体（如思源黑体、微软雅黑），或设置环境变量 `MCP_CHART_FONT_PATH` 指向 `.ttf`/`.otf` 字体文件路径。
+
 ## 使用 MCP Tool
 
 ### 1. 查询分类
