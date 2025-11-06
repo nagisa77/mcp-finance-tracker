@@ -410,7 +410,11 @@ async def compare_expense_periods(
 @mcp.tool(
     name="get_expense_timeline",
     description=(
-        "获取指定周期内的支出时间序列，支持按分类筛选与可选的周期对比。"
+        "获取指定周期内的支出时间序列。"
+        "支持按分类筛选、可指定统计颗粒度（支持 month、week、day），"
+        "可对两个不同周期的支出趋势进行对比。"
+        "颗粒度表示时间分桶的单位，可选择“月”、“周”或“天”。"
+        "也支持传入一个或多个分类 ID，统计指定分类的支出变化。"
         f"当前日期：{CURRENT_DATE_TEXT}"
     ),
     structured_output=True,
@@ -431,13 +435,13 @@ async def get_expense_timeline_tool(
     ],
     granularity: Annotated[
         Literal["month", "week", "day"],
-        PydanticField(description="统计颗粒度，可选值为 month、week、day。"),
+        PydanticField(description="统计颗粒度，可选值为 month、week、day，决定数据按哪种粒度分组展示，可用于趋势分析。"),
     ],
     category_ids: Annotated[
         list[int] | None,
         PydanticField(
             default=None,
-            description="需要统计的分类 ID 列表，留空则统计全部支出。",
+            description="需要统计的分类 ID 列表，留空则统计全部支出。可用于按多个分类细分支出趋势。",
         ),
     ] = None,
     comparison_reference: Annotated[
@@ -445,13 +449,13 @@ async def get_expense_timeline_tool(
         PydanticField(
             default=None,
             description=(
-                "可选的对比周期参考值。填写后将对比两个周期的支出趋势。"
+                "可选的对比周期参考值，填写后可对比两个不同周期的支出趋势，如对比相邻两月、两周等。"
             ),
         ),
     ] = None,
     ctx: Context | None = None,
 ) -> ExpenseTimelineResult:
-    """获取指定周期（可选分类）的支出时间序列数据。"""
+    """获取指定周期（可选分类）的支出时间序列数据，支持指定颗粒度（日、周、月）与对比周期分析。"""
 
     user_id = require_user_id(ctx)
 
