@@ -54,7 +54,7 @@ def _configure_matplotlib_font() -> None:
 
     plt.rcParams["axes.unicode_minus"] = False
 
-    custom_font_path = os.getenv("MCP_CHART_FONT_PATH")
+    custom_font_path = "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc"
     if custom_font_path:
         try:
             font_manager.fontManager.addfont(custom_font_path)
@@ -87,28 +87,29 @@ def _render_bar_chart(
 ) -> bytes:
     categories = [item.category_name for item in breakdown]
     amounts = [item.total_amount for item in breakdown]
-    figure_height = max(3.5, 1.0 + 0.6 * len(categories))
-    fig, ax = plt.subplots(figsize=(8, figure_height))
+    figure_width = max(6.0, 0.9 * len(categories))
+    fig, ax = plt.subplots(figsize=(figure_width, 5))
 
-    reversed_amounts = amounts[::-1]
-    bars = ax.barh(categories[::-1], reversed_amounts, color="#4C72B0")
-    ax.set_xlabel("金额 (元)")
+    x_positions = range(len(categories))
+    bars = ax.bar(x_positions, amounts, color="#4C72B0")
+    ax.set_ylabel("金额 (元)")
     ax.set_title(f"各分类支出柱状图（{period_label}）")
-    ax.grid(axis="x", linestyle="--", alpha=0.3)
+    ax.grid(axis="y", linestyle="--", alpha=0.3)
 
     max_amount = max(amounts, default=0)
     if max_amount <= 0:
-        ax.set_xlim(0, 1)
+        ax.set_ylim(0, 1)
     else:
-        ax.set_xlim(0, max_amount * 1.15)
+        ax.set_ylim(0, max_amount * 1.15)
 
-    ax.invert_yaxis()
     ax.bar_label(
         bars,
-        labels=[f"{value:.2f}" for value in reversed_amounts],
-        padding=4,
+        labels=[f"{value:.2f}" for value in amounts],
+        padding=3,
         fontsize=9,
     )
+    ax.set_xticks(list(x_positions))
+    ax.set_xticklabels(categories, rotation=45, ha="right")
 
     fig.tight_layout()
     return _figure_to_png_bytes(fig)
@@ -129,6 +130,22 @@ def _render_pie_chart(
         fig.suptitle(f"各分类支出占比（{period_label}）")
         fig.tight_layout()
         return _figure_to_png_bytes(fig)
+
+    grouped_categories: list[str] = []
+    grouped_amounts: list[float] = []
+    other_amount = 0.0
+    for name, amount in zip(categories, amounts):
+        if total > 0 and amount / total < 0.05:
+            other_amount += amount
+        else:
+            grouped_categories.append(name)
+            grouped_amounts.append(amount)
+    if other_amount > 0:
+        grouped_categories.append("Other")
+        grouped_amounts.append(other_amount)
+
+    categories = grouped_categories
+    amounts = grouped_amounts
 
     cmap = plt.get_cmap("tab20")
     colors = [cmap(i % cmap.N) for i in range(len(categories))]
