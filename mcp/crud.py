@@ -5,7 +5,7 @@ from typing import Iterable, List, Optional
 from sqlalchemy import Select, asc, desc, func, select
 from sqlalchemy.orm import Session
 
-from .config import DEFAULT_CATEGORIES
+from .config import DEFAULT_CATEGORIES, UNCATEGORIZED_CATEGORY_COLOR
 from .models import Bill, BillType, Category
 from .schemas import BillCreate
 
@@ -13,15 +13,27 @@ from .schemas import BillCreate
 def ensure_default_categories(session: Session, user_id: str) -> None:
     """确保默认分类存在."""
 
-    existing_names = {
-        name
-        for name in session.scalars(
-            select(Category.name).where(Category.user_id == user_id)
+    existing_categories = {
+        category.name: category
+        for category in session.scalars(
+            select(Category).where(Category.user_id == user_id)
         ).all()
     }
     for category in DEFAULT_CATEGORIES:
-        if category["name"] not in existing_names:
+        existing = existing_categories.get(category["name"])
+        if existing is None:
             session.add(Category(user_id=user_id, **category))
+            continue
+
+        updated = False
+        if existing.description != category.get("description"):
+            existing.description = category.get("description")
+            updated = True
+        if category.get("color") and existing.color != category["color"]:
+            existing.color = category["color"]
+            updated = True
+        if updated:
+            session.add(existing)
 
 
 def list_categories(session: Session, user_id: str) -> List[Category]:
@@ -109,6 +121,7 @@ def get_expense_summary_by_category(
             Bill.category_id.label("category_id"),
             func.coalesce(Category.name, "未分类").label("category_name"),
             func.sum(Bill.amount).label("total_amount"),
+            func.coalesce(Category.color, "").label("color"),
         )
         .join(Category, Bill.category_id == Category.id, isouter=True)
         .where(
@@ -117,7 +130,7 @@ def get_expense_summary_by_category(
             Bill.created_at < end,
             Bill.user_id == user_id,
         )
-        .group_by(Bill.category_id, Category.name)
+        .group_by(Bill.category_id, Category.name, Category.color)
         .order_by(desc("total_amount"))
     )
 
@@ -127,6 +140,7 @@ def get_expense_summary_by_category(
             "category_id": row.category_id,
             "category_name": row.category_name,
             "total_amount": float(row.total_amount or 0),
+            "color": row.color or UNCATEGORIZED_CATEGORY_COLOR,
         }
         for row in result
     ]

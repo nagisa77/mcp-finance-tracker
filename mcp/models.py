@@ -33,6 +33,7 @@ class Category(Base):
     user_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     name: Mapped[str] = mapped_column(String(64), nullable=False)
     description: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    color: Mapped[str] = mapped_column(String(7), nullable=False, default="#5E81AC")
 
     bills: Mapped[List["Bill"]] = relationship(back_populates="category", cascade="all,delete")
 
