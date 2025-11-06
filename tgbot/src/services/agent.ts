@@ -4,6 +4,9 @@ import type { InputPartWithFileId, WorkflowImage, WorkflowResult } from '../type
 
 const TELEGRAM_USER_ID_HEADER = 'x-telegram-user-id';
 
+const CURRENT_DATE_TEXT = new Date().toISOString().split('T')[0];
+
+
 const MCP_BASE_CONFIG = {
   serverLabel: 'finance_mcp',
   serverUrl: 'https://www.open-isle.com/mcp-wallet',
@@ -20,7 +23,8 @@ const MCP_BASE_CONFIG = {
 };
 
 const AGENT_INSTRUCTIONS = `
-注意: 严禁使用任何markdown格式和符号
+注意: 严禁使用任何markdown格式和符号.
+当前日期：${CURRENT_DATE_TEXT}
 
 首先，务必调用 get_categories 工具，以获取当前可用的账单分类与类型信息。
 仔细分析用户输入内容——如包含账单相关信息（无论是图片或文字），需将图片中的文字内容解析出来并用作账单明细。

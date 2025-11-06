@@ -57,8 +57,6 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-CURRENT_DATE_TEXT = date.today().isoformat()
-
 mcp = FastMCP("记账服务", host="0.0.0.0", port=8000)
 
 
@@ -230,7 +228,6 @@ async def record_multiple_bills(
     name="get_expense_summary",
     description=(
         "获取指定周期内的消费统计（总支出、分类开销、图表等）。"
-        f"当前日期：{CURRENT_DATE_TEXT}"
     ),
     structured_output=True,
 )
@@ -297,7 +294,6 @@ async def get_expense_summary(
     name="compare_expense_periods",
     description=(
         "对比两个时间周期内的消费情况，支持按日、周、月、年进行对比。"
-        f"当前日期：{CURRENT_DATE_TEXT}"
     ),
     structured_output=True,
 )
@@ -446,7 +442,6 @@ async def compare_expense_periods(
         "可对两个不同周期的支出趋势进行对比。"
         "颗粒度表示时间分桶的单位，可选择“月”、“周”或“天”。"
         "也支持传入一个或多个分类 ID，统计指定分类的支出变化。"
-        f"当前日期：{CURRENT_DATE_TEXT}"
     ),
     structured_output=True,
 )
@@ -626,7 +621,6 @@ async def get_expense_timeline_tool(
     name="get_category_expense_detail",
     description=(
         "获取指定分类在某个周期内的消费明细（含总开销与金额排名前 20 的账单）。"
-        f"当前日期：{CURRENT_DATE_TEXT}"
     ),
     structured_output=True,
 )

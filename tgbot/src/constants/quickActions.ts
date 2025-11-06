@@ -15,13 +15,13 @@ export const QUICK_ACTIONS = {
   },
   compare_weekly: {
     title: "对比本周和上周支出",
-    prompt: "请对比本周和上周的支出情况，并给出主要差异和建议。",
+    prompt: "请对比本周和上周的支出情况，并给出主要差异和建议。首先调用get_expense_summary，分别获取本周和上周的支出情况，然后调用compare_expense_periods，对比两个周期的支出情况。最后调用get_expense_timeline，传入本周和上周，按照天为颗粒度，对比每天的总支出",
     aliases: ["对比本周和上周支出", "/compare", "compare"],
   },
   compare_monthly: {
     title: "对比本月和上月支出",
     prompt:
-      "请对比本月与上月的支出结构，指出显著变化并提供优化建议。",
+      "请对比本月与上月的支出结构，指出显著变化并提供优化建议。首先调用get_expense_summary，分别获取本月和上月的支出情况，然后调用compare_expense_periods，对比两个周期的支出情况。最后调用get_expense_timeline，传入本月和上月，按照月为颗粒度，对比每月的总支出",
     aliases: ["对比本月和上月支出", "/compare_monthly"],
   },
   detail: {
