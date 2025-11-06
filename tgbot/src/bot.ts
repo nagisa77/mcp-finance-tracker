@@ -67,8 +67,10 @@ bot.on("message", async (msg: Message) => {
         [
           "请选择需要的功能或直接发送账单信息。",
           "",
-          "可用命令：",
+          "可用快捷命令：",
           buildCommandList(),
+          "",
+          "💗 亦可以直接输入命令或文字描述，我们会一起处理。",
         ].join("\n")
       );
       return;
