@@ -30,9 +30,13 @@ from .schemas import (
     CategoryExpenseDetailResult,
     CategoryListResult,
     CategoryRead,
+    ChartImage,
+    ExpenseComparisonResult,
+    ExpenseComparisonSnapshot,
     ExpenseSummaryResult,
 )
 from .services import (
+    generate_expense_comparison_chart,
     generate_expense_summary_charts,
     parse_period,
     require_user_id,
@@ -281,6 +285,120 @@ async def get_expense_summary(
     except Exception as exc:  # noqa: BLE001
         logger.exception("获取消费小结失败: %s", exc)
         raise ValueError(f"获取消费小结失败：{exc}") from exc
+
+
+@mcp.tool(
+    name="compare_expense_periods",
+    description=(
+        "对比两个时间周期内的消费情况，支持按日、周、月、年进行对比。"
+        f"当前日期：{CURRENT_DATE_TEXT}"
+    ),
+    structured_output=True,
+)
+async def compare_expense_periods(
+    period: Annotated[
+        Literal["day", "week", "month", "year"],
+        PydanticField(description="统计粒度，可选值为 day、week、month、year。"),
+    ],
+    first_reference: Annotated[
+        str,
+        PydanticField(
+            description=(
+                "第一个周期的参考值。day 传 YYYY-MM-DD，week 传 YYYY-Www，"
+                "month 传 YYYY-MM，year 传 YYYY。"
+            )
+        ),
+    ],
+    second_reference: Annotated[
+        str,
+        PydanticField(
+            description=(
+                "第二个周期的参考值。day 传 YYYY-MM-DD，week 传 YYYY-Www，"
+                "month 传 YYYY-MM，year 传 YYYY。"
+            )
+        ),
+    ],
+    ctx: Context | None = None,
+) -> ExpenseComparisonResult:
+    """Compare expense summaries between two time periods."""
+
+    user_id = require_user_id(ctx)
+
+    try:
+        first_start, first_end, first_label = parse_period(period, first_reference)
+        second_start, second_end, second_label = parse_period(period, second_reference)
+    except ValueError as exc:
+        raise ValueError(str(exc)) from exc
+
+    try:
+        with session_scope() as session:
+            ensure_default_categories(session, user_id)
+
+            first_total = get_total_expense(session, first_start, first_end, user_id)
+            first_breakdown_raw = get_expense_summary_by_category(
+                session, first_start, first_end, user_id
+            )
+
+            second_total = get_total_expense(session, second_start, second_end, user_id)
+            second_breakdown_raw = get_expense_summary_by_category(
+                session, second_start, second_end, user_id
+            )
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("获取消费对比数据失败: %s", exc)
+        raise ValueError(f"获取消费对比数据失败：{exc}") from exc
+
+    try:
+        first_breakdown = [
+            CategoryExpenseBreakdown.model_validate(item)
+            for item in first_breakdown_raw
+        ]
+        second_breakdown = [
+            CategoryExpenseBreakdown.model_validate(item)
+            for item in second_breakdown_raw
+        ]
+    except ValidationError as exc:
+        logger.exception("消费对比数据解析失败: %s", exc)
+        raise ValueError("消费对比数据格式不正确，请稍后重试。") from exc
+
+    try:
+        first_snapshot = ExpenseComparisonSnapshot(
+            reference=first_reference,
+            resolved_label=first_label,
+            start=first_start,
+            end=first_end,
+            total_expense=first_total,
+            category_breakdown=first_breakdown,
+        )
+        second_snapshot = ExpenseComparisonSnapshot(
+            reference=second_reference,
+            resolved_label=second_label,
+            start=second_start,
+            end=second_end,
+            total_expense=second_total,
+            category_breakdown=second_breakdown,
+        )
+    except ValidationError as exc:
+        logger.exception("消费对比快照构建失败: %s", exc)
+        raise ValueError("消费对比数据格式不正确，请稍后重试。") from exc
+
+    charts: list[ChartImage] = []
+    if COS_BASE_URL:
+        try:
+            charts = generate_expense_comparison_chart(
+                first_breakdown,
+                first_label,
+                second_breakdown,
+                second_label,
+            )
+        except (ValueError, CosConfigurationError) as exc:
+            logger.warning("生成消费对比图表失败: %s", exc)
+
+    return ExpenseComparisonResult(
+        period=period,
+        first=first_snapshot,
+        second=second_snapshot,
+        charts=charts,
+    )
 
 
 @mcp.tool(
