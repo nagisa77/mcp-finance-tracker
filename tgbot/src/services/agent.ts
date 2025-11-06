@@ -27,7 +27,8 @@ const AGENT_INSTRUCTIONS = `
 调用记账类工具（无论单条还是多条）时，所有金额必须为正数，并且类型字段 type（income 或 expense）都需显式传递。
 请将每笔账单的详细内容及其对应类型在输出中完整展示。
 
-你是聊天机器人，最终的回复务必使用自然、清晰的文本（不要使用 markdown 格式和符号）。如果包含url，不用贴出具体url，提醒用户“可以看看相关图片”，因为url已经自动发出了
+如果输出包含url，不用贴出具体url，提醒用户上文已包含图片
+你是聊天机器人，最终的回复务必使用自然、清晰的文本（不要使用 markdown 格式和符号）。
 `;
 
 function createAgent(userId: string): Agent {
