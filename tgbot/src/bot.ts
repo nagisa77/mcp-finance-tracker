@@ -26,8 +26,9 @@ const pendingPhotos = new Map<number, StoredPhoto[]>();
 
 bot.setMyCommands([
   { command: "start", description: "开始使用记账机器人" },
-  { command: "report", description: "生成最近开销报表" },
-  { command: "compare", description: "对比本周和上周支出" },
+  { command: "report_recent", description: "生成最近开销报表" },
+  { command: "compare_weekly", description: "对比本周和上周支出" },
+  { command: "compare_monthly", description: "对比本月和上月支出" },
   { command: "detail", description: "查看分类支出详情" },
 ]);
 
@@ -36,12 +37,18 @@ bot.on("message", async (msg: Message) => {
   const telegramUserId = msg.from?.id ?? chatId;
   try {
     if (msg.text === "/start") {
-      await bot.sendMessage(chatId, "请选择需要的功能或直接发送账单信息。", {
-        reply_markup: {
-          keyboard: Object.keys(QUICK_ACTIONS).map((text) => [{ text }]),
-          resize_keyboard: true,
-        },
-      });
+      await bot.sendMessage(
+        chatId,
+        [
+          "请选择需要的功能或直接发送账单信息。",
+          "",
+          "可用命令：",
+          "  /report  - 生成最近开销报表",
+          "  /compare_weekly - 对比本周和上周支出",
+          "  /compare_monthly - 对比本月和上月支出",
+          "  /detail  - 查看分类支出详情",
+        ].join("\n")
+      );
       return;
     }
     if (msg.text === "/report") {
