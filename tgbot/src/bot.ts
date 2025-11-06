@@ -19,36 +19,8 @@ bot.setMyCommands([
   { command: 'detail', description: '查看分类支出详情' },
 ]);
 
-bot.onText(/\/report/, async (msg) => {
-  const chatId = msg.chat.id;
-  await runWithTyping(chatId, async () => {
-    await sendWorkflowResult(chatId, [
-      { type: 'input_text', text: QUICK_ACTIONS['生成最近开销报表'] },
-    ]);
-  });
-});
-
-bot.onText(/\/compare/, async (msg) => {
-  const chatId = msg.chat.id;
-  await runWithTyping(chatId, async () => {
-    await sendWorkflowResult(chatId, [
-      { type: 'input_text', text: QUICK_ACTIONS['对比本周和上周支出'] },
-    ]);
-  });
-});
-
-bot.onText(/\/detail/, async (msg) => {
-  const chatId = msg.chat.id;
-  await runWithTyping(chatId, async () => {
-    await sendWorkflowResult(chatId, [
-      { type: 'input_text', text: QUICK_ACTIONS['查看分类支出详情'] },
-    ]);
-  });
-});
-
 bot.on('message', async (msg: Message) => {
   const chatId = msg.chat.id;
-
   try {
     if (msg.text === '/start') {
       await bot.sendMessage(chatId, '请选择需要的功能或直接发送账单信息。', {
@@ -56,6 +28,30 @@ bot.on('message', async (msg: Message) => {
           keyboard: Object.keys(QUICK_ACTIONS).map((text) => [{ text }]),
           resize_keyboard: true,
         },
+      });
+      return;
+    }
+    if (msg.text === '/report') {
+      await runWithTyping(chatId, async () => {
+        await sendWorkflowResult(chatId, [
+          { type: 'input_text', text: QUICK_ACTIONS['生成最近开销报表'] },
+        ]);
+      });
+      return;
+    }
+    if (msg.text === '/compare') {
+      await runWithTyping(chatId, async () => {
+        await sendWorkflowResult(chatId, [
+          { type: 'input_text', text: QUICK_ACTIONS['对比本周和上周支出'] },
+        ]);
+      });
+      return;
+    }
+    if (msg.text === '/detail') {
+      await runWithTyping(chatId, async () => {
+        await sendWorkflowResult(chatId, [
+          { type: 'input_text', text: QUICK_ACTIONS['查看分类支出详情'] },
+        ]);
       });
       return;
     }
