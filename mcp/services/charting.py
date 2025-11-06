@@ -7,7 +7,8 @@ from io import BytesIO
 from typing import Iterable
 
 import matplotlib
-from matplotlib import font_manager
+import numpy as np
+from matplotlib import font_manager, image as mpimg
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
@@ -176,6 +177,39 @@ def _render_pie_chart(
     return _figure_to_png_bytes(fig)
 
 
+def _merge_chart_images_horizontally(left: bytes, right: bytes) -> bytes:
+    """Merge two PNG images into a single image placed side-by-side."""
+
+    left_image = mpimg.imread(BytesIO(left), format="png")
+    right_image = mpimg.imread(BytesIO(right), format="png")
+
+    max_height = max(left_image.shape[0], right_image.shape[0])
+
+    def _pad_to_height(image: np.ndarray) -> np.ndarray:
+        if image.shape[0] == max_height:
+            return image
+
+        pad_total = max_height - image.shape[0]
+        pad_top = pad_total // 2
+        pad_bottom = pad_total - pad_top
+        pad_width = ((pad_top, pad_bottom), (0, 0))
+        if image.ndim == 3:
+            pad_width += ((0, 0),)
+        return np.pad(image, pad_width, mode="constant", constant_values=1.0)
+
+    left_padded = _pad_to_height(left_image)
+    right_padded = _pad_to_height(right_image)
+
+    merged = np.concatenate((left_padded, right_padded), axis=1)
+
+    buffer = BytesIO()
+    plt.imsave(buffer, merged, format="png")
+    buffer.seek(0)
+    data = buffer.getvalue()
+    buffer.close()
+    return data
+
+
 def generate_expense_summary_charts(
     breakdown: list[CategoryExpenseBreakdown],
     period_label: str,
@@ -188,18 +222,13 @@ def generate_expense_summary_charts(
     bar_chart_bytes = _render_bar_chart(breakdown, period_label)
     pie_chart_bytes = _render_pie_chart(breakdown, period_label)
 
-    bar_chart_url = upload_chart_image(bar_chart_bytes, "bar")
-    pie_chart_url = upload_chart_image(pie_chart_bytes, "pie")
+    combined_bytes = _merge_chart_images_horizontally(bar_chart_bytes, pie_chart_bytes)
+    combined_url = upload_chart_image(combined_bytes, "combined")
 
     return [
         ChartImage(
-            title=f"各分类支出柱状图（{period_label}）",
-            image_url=bar_chart_url,
+            title=f"各分类支出概览（{period_label}）",
+            image_url=combined_url,
             mime_type="image/png",
-        ),
-        ChartImage(
-            title=f"各分类支出占比（{period_label}）",
-            image_url=pie_chart_url,
-            mime_type="image/png",
-        ),
+        )
     ]
