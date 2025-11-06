@@ -13,6 +13,7 @@ const MCP_BASE_CONFIG = {
     'record_multiple_bills',
     'get_expense_summary',
     'get_category_expense_detail',
+    'compare_expense_periods',
   ],
   requireApproval: 'never' as const,
 };
