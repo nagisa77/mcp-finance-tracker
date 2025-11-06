@@ -27,7 +27,7 @@ const agent = new Agent({
 调用记账类工具（无论单条还是多条）时，所有金额必须为正数，并且类型字段 type（income 或 expense）都需显式传递。
 请将每笔账单的详细内容及其对应类型在输出中完整展示。
 
-你是聊天机器人，最终的回复务必使用自然、清晰的文本（不要使用 markdown 格式和符号）。
+你是聊天机器人，最终的回复务必使用自然、清晰的文本（不要使用 markdown 格式和符号）。如果包含url，不用贴出具体url，提醒用户“可以看看相关图片”，因为url已经自动发出了
 `,
   tools: [mcp],
   model: 'gpt-4o',
@@ -112,29 +112,29 @@ export async function runWorkflowFromParts(contentParts: InputPartWithFileId[]) 
 
 function extractExpenseSummaryCharts(newItems: any[]): WorkflowImage[] {
   if (!Array.isArray(newItems) || newItems.length === 0) {
+    console.log('[extractExpenseSummaryCharts] No newItems or not an array:', newItems);
     return [];
   }
 
   const collected: WorkflowImage[] = [];
 
-  for (const item of newItems) {
-    if (!item || item.type !== 'tool_call_output_item') {
+  for (const [itemIdx, item] of newItems.entries()) {
+    if (!item || item.type !== 'tool_call_item') {
+      console.log(`[extractExpenseSummaryCharts][${itemIdx}] Skipping item: not a tool_call_item, got:`, item?.type);
       continue;
     }
 
     const rawItem = item.rawItem ?? {};
-    const toolName = rawItem.name ?? rawItem.tool_name ?? rawItem.toolName;
-    if (toolName !== 'get_expense_summary') {
-      continue;
-    }
 
-    const structured = extractStructuredData(item.output);
+    const structured = extractStructuredData(rawItem.output);
     if (!structured || typeof structured !== 'object') {
+      console.log(`[extractExpenseSummaryCharts][${itemIdx}] No structured data found.`);
       continue;
     }
 
     const charts = structured.charts;
     if (!charts || typeof charts !== 'object') {
+      console.log(`[extractExpenseSummaryCharts][${itemIdx}] No charts field or not object. structured:`, structured);
       continue;
     }
 
@@ -143,10 +143,13 @@ function extractExpenseSummaryCharts(newItems: any[]): WorkflowImage[] {
       ['pie_chart', charts.pie_chart ?? charts.pieChart, 'pie'],
     ];
 
-    for (const [_key, chart, suffix] of chartEntries) {
+    for (const [chartKey, chart, suffix] of chartEntries) {
       if (!chart || typeof chart !== 'object') {
+        console.log(`[extractExpenseSummaryCharts][${itemIdx}] Chart "${chartKey}" missing or not an object:`, chart);
         continue;
       }
+
+      console.log(`[extractExpenseSummaryCharts][${itemIdx}] Chart "${chartKey}":`, chart);
 
       const base64Value =
         chart.base64_data ?? chart.base64Data ?? chart.image_base64 ?? chart.imageBase64;
@@ -167,19 +170,35 @@ function extractExpenseSummaryCharts(newItems: any[]): WorkflowImage[] {
           : undefined;
 
       if (!normalizedBase64 && !normalizedUrl) {
+        console.log(`[extractExpenseSummaryCharts][${itemIdx}] Skipping chart "${chartKey}": no base64 or url.`);
         continue;
       }
 
-      collected.push({
+      const imageObj = {
         fileName: `expense-summary-${suffix}.png`,
         mimeType,
         base64Data: normalizedBase64,
         imageUrl: normalizedUrl,
         caption,
-      });
+      };
+
+      console.log(
+        `[extractExpenseSummaryCharts][${itemIdx}] Extracted chart:`,
+        JSON.stringify({
+          chartKey,
+          fileName: imageObj.fileName,
+          base64Len: normalizedBase64?.length,
+          imageUrl: normalizedUrl,
+          mimeType,
+          caption,
+        })
+      );
+
+      collected.push(imageObj);
     }
   }
 
+  console.log(`[extractExpenseSummaryCharts] Collected total: ${collected.length}`);
   return collected;
 }
 
@@ -194,59 +213,82 @@ function normalizeBase64(value: string): string {
 }
 
 function extractStructuredData(output: any): any | null {
+  console.log('[extractStructuredData] Input:', JSON.stringify(output));
+
   if (!output) {
+    console.log('[extractStructuredData] Output is null/undefined.');
     return null;
   }
 
   if (Array.isArray(output)) {
+    console.log('[extractStructuredData] Output is array, recursively checking items...');
     for (const item of output) {
       const structured = extractStructuredData(item);
       if (structured) {
+        console.log('[extractStructuredData] Found structured data in array item:', JSON.stringify(structured));
         return structured;
       }
     }
+    console.log('[extractStructuredData] No structured data found in array.');
     return null;
   }
 
   if (typeof output === 'string') {
+    console.log('[extractStructuredData] Output is string, attempting to parse as JSON...');
     try {
-      return JSON.parse(output);
+      const parsed = JSON.parse(output);
+      console.log('[extractStructuredData] Successfully parsed string to object:', JSON.stringify(parsed));
+      return parsed;
     } catch (error) {
+      console.log('[extractStructuredData] Failed to parse string as JSON:', error);
       return null;
     }
   }
 
   if (typeof output !== 'object') {
+    console.log('[extractStructuredData] Output is not object, returning null.');
     return null;
   }
 
   if (output.json && typeof output.json === 'object') {
+    console.log('[extractStructuredData] Found "json" property:', JSON.stringify(output.json));
     return output.json;
   }
 
   if (output.structuredContent && typeof output.structuredContent === 'object') {
+    console.log('[extractStructuredData] Found "structuredContent" property:', JSON.stringify(output.structuredContent));
     return output.structuredContent;
   }
 
   if (typeof output.data === 'string') {
+    console.log('[extractStructuredData] Found string "data" property, attempting to parse as JSON...');
     try {
-      return JSON.parse(output.data);
+      const parsed = JSON.parse(output.data);
+      console.log('[extractStructuredData] Successfully parsed "data" property:', JSON.stringify(parsed));
+      return parsed;
     } catch (error) {
+      console.log('[extractStructuredData] Failed to parse "data" property:', error);
       // ignore parse error
     }
   }
 
   if (typeof output.text === 'string') {
+    console.log('[extractStructuredData] Found string "text" property, attempting to parse as JSON...');
     try {
-      return JSON.parse(output.text);
+      const parsed = JSON.parse(output.text);
+      console.log('[extractStructuredData] Successfully parsed "text" property:', JSON.stringify(parsed));
+      return parsed;
     } catch (error) {
+      console.log('[extractStructuredData] Failed to parse "text" property:', error);
       // ignore parse error
     }
   }
 
   if (output.charts && typeof output.charts === 'object') {
+    console.log('[extractStructuredData] Found "charts" property with object value, returning output as structured data.');
     return output;
   }
 
+  console.log('[extractStructuredData] No structured data found, returning null.');
   return null;
 }
