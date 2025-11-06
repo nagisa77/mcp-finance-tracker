@@ -1,11 +1,13 @@
 """记账 MCP 服务端."""
 import logging
+import os
 import uuid
 from datetime import date, datetime, time, timedelta, timezone
 from io import BytesIO
 from typing import Annotated, Literal
 
 import matplotlib
+from matplotlib import font_manager
 from qcloud_cos import CosConfig, CosS3Client
 from qcloud_cos.cos_exception import CosClientError, CosServiceError
 from mcp.server.fastmcp import Context, FastMCP
@@ -40,7 +42,6 @@ from .schemas import (
     CategoryExpenseDetailResult,
     ChartImage,
     ExpenseSummaryResult,
-    ExpenseSummaryCharts,
 )
 from .config import (
     COS_BASE_URL,
@@ -56,6 +57,57 @@ logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
 logger = logging.getLogger(__name__)
+
+_PREFERRED_FONT_FAMILIES = [
+    "Noto Sans CJK SC",
+    "Source Han Sans SC",
+    "Source Han Sans CN",
+    "Microsoft YaHei",
+    "PingFang SC",
+    "SimHei",
+    "WenQuanYi Micro Hei",
+]
+
+
+def _configure_matplotlib_font() -> None:
+    """Ensure Matplotlib renders Chinese text with an available font."""
+
+    plt.rcParams["axes.unicode_minus"] = False
+
+    def _prepend_sans_family(family: str) -> None:
+        current = plt.rcParams.get("font.sans-serif", [])
+        if isinstance(current, (list, tuple)):
+            new_list = [family, *[item for item in current if item != family]]
+        elif current:
+            new_list = [family, str(current)]
+        else:
+            new_list = [family]
+        plt.rcParams["font.sans-serif"] = new_list
+    custom_font_path = os.getenv("MCP_CHART_FONT_PATH")
+    if custom_font_path:
+        try:
+            font_manager.fontManager.addfont(custom_font_path)
+            font_prop = font_manager.FontProperties(fname=custom_font_path)
+            family_name = font_prop.get_name()
+            plt.rcParams["font.family"] = family_name
+            _prepend_sans_family(family_name)
+            logger.info("已加载自定义图表字体: %s", family_name)
+            return
+        except (FileNotFoundError, OSError) as exc:  # noqa: TRY003
+            logger.warning("加载自定义字体失败: %s", exc)
+
+    available_families = {font.name for font in font_manager.fontManager.ttflist}
+    for family in _PREFERRED_FONT_FAMILIES:
+        if family in available_families:
+            plt.rcParams["font.family"] = family
+            _prepend_sans_family(family)
+            logger.info("使用字体 %s 渲染图表", family)
+            return
+
+    logger.warning("未找到中文字体，图表中文字可能无法正常显示。")
+
+
+_configure_matplotlib_font()
 
 CURRENT_DATE_TEXT = date.today().isoformat()
 
@@ -132,7 +184,10 @@ def _upload_chart_image(image_bytes: bytes, suffix: str) -> str:
     return f"{base_url}/{object_key}"
 
 
-def _render_bar_chart(breakdown: list[CategoryExpenseBreakdown]) -> bytes:
+def _render_bar_chart(
+    breakdown: list[CategoryExpenseBreakdown],
+    period_label: str,
+) -> bytes:
     """Create a horizontal bar chart for category expenses."""
 
     categories = [item.category_name for item in breakdown]
@@ -143,7 +198,7 @@ def _render_bar_chart(breakdown: list[CategoryExpenseBreakdown]) -> bytes:
     reversed_amounts = amounts[::-1]
     bars = ax.barh(categories[::-1], reversed_amounts, color="#4C72B0")
     ax.set_xlabel("金额 (元)")
-    ax.set_title("各分类支出柱状图")
+    ax.set_title(f"各分类支出柱状图（{period_label}）")
     ax.grid(axis="x", linestyle="--", alpha=0.3)
 
     max_amount = max(amounts, default=0)
@@ -159,7 +214,10 @@ def _render_bar_chart(breakdown: list[CategoryExpenseBreakdown]) -> bytes:
     return _figure_to_png_bytes(fig)
 
 
-def _render_pie_chart(breakdown: list[CategoryExpenseBreakdown]) -> bytes:
+def _render_pie_chart(
+    breakdown: list[CategoryExpenseBreakdown],
+    period_label: str,
+) -> bytes:
     """Create a pie chart for category expenses."""
 
     categories = [item.category_name for item in breakdown]
@@ -170,7 +228,7 @@ def _render_pie_chart(breakdown: list[CategoryExpenseBreakdown]) -> bytes:
     if total <= 0:
         ax.axis("off")
         ax.text(0.5, 0.5, "暂无支出数据", ha="center", va="center", fontsize=14)
-        fig.suptitle("各分类支出占比")
+        fig.suptitle(f"各分类支出占比（{period_label}）")
         fig.tight_layout()
         return _figure_to_png_bytes(fig)
 
@@ -192,37 +250,60 @@ def _render_pie_chart(breakdown: list[CategoryExpenseBreakdown]) -> bytes:
         text.set_fontsize(9)
 
     ax.axis("equal")
-    ax.set_title("各分类支出占比")
+    ax.set_title(f"各分类支出占比（{period_label}）")
     fig.tight_layout()
     return _figure_to_png_bytes(fig)
 
 
+def _build_chart_period_label(
+    start: datetime,
+    end: datetime,
+    resolved_label: str,
+) -> str:
+    """Create a concise label describing the chart period."""
+
+    start_text = start.strftime("%Y-%m-%d")
+    end_inclusive = end - timedelta(seconds=1)
+    end_text = end_inclusive.strftime("%Y-%m-%d")
+
+    if end_inclusive.date() <= start.date():
+        range_text = start_text
+    else:
+        range_text = f"{start_text} 至 {end_text}"
+
+    resolved_label = resolved_label.strip()
+    if resolved_label and resolved_label not in range_text:
+        return f"{resolved_label}：{range_text}"
+    return range_text
+
+
 def _generate_expense_summary_charts(
     breakdown: list[CategoryExpenseBreakdown],
-) -> ExpenseSummaryCharts | None:
+    period_label: str,
+) -> list[ChartImage]:
     """Generate bar and pie charts for the expense summary."""
 
     if not breakdown:
-        return None
+        return []
 
-    bar_chart_bytes = _render_bar_chart(breakdown)
-    pie_chart_bytes = _render_pie_chart(breakdown)
+    bar_chart_bytes = _render_bar_chart(breakdown, period_label)
+    pie_chart_bytes = _render_pie_chart(breakdown, period_label)
 
     bar_chart_url = _upload_chart_image(bar_chart_bytes, "bar")
     pie_chart_url = _upload_chart_image(pie_chart_bytes, "pie")
 
-    return ExpenseSummaryCharts(
-        bar_chart=ChartImage(
-            title="各分类支出柱状图",
+    return [
+        ChartImage(
+            title=f"各分类支出柱状图（{period_label}）",
             image_url=bar_chart_url,
             mime_type="image/png",
         ),
-        pie_chart=ChartImage(
-            title="各分类支出占比",
+        ChartImage(
+            title=f"各分类支出占比（{period_label}）",
             image_url=pie_chart_url,
             mime_type="image/png",
         ),
-    )
+    ]
 
 
 def _resolve_category(
@@ -510,7 +591,8 @@ async def get_expense_summary(
             CategoryExpenseBreakdown(**item) for item in breakdown_raw
         ]
 
-        charts = _generate_expense_summary_charts(breakdown_models)
+        period_label = _build_chart_period_label(start, end, label)
+        charts = _generate_expense_summary_charts(breakdown_models, period_label)
 
         return ExpenseSummaryResult(
             period=period,

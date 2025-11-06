@@ -110,15 +110,16 @@ export async function runWorkflowFromParts(contentParts: InputPartWithFileId[]) 
   });
 }
 
-function extractExpenseSummaryCharts(newItems: any[]): WorkflowImage[] {
+function extractExpenseSummaryCharts(newItems: any[]): WorkflowImage[][] {
   if (!Array.isArray(newItems) || newItems.length === 0) {
     console.log('[extractExpenseSummaryCharts] No newItems or not an array:', newItems);
     return [];
   }
 
-  const collected: WorkflowImage[] = [];
+  const collected: WorkflowImage[][] = [];
 
   for (const [itemIdx, item] of newItems.entries()) {
+    const itemCharts: WorkflowImage[] = [];
     if (!item || item.type !== 'tool_call_item') {
       console.log(`[extractExpenseSummaryCharts][${itemIdx}] Skipping item: not a tool_call_item, got:`, item?.type);
       continue;
@@ -133,23 +134,24 @@ function extractExpenseSummaryCharts(newItems: any[]): WorkflowImage[] {
     }
 
     const charts = structured.charts;
-    if (!charts || typeof charts !== 'object') {
-      console.log(`[extractExpenseSummaryCharts][${itemIdx}] No charts field or not object. structured:`, structured);
+    if (!Array.isArray(charts) || charts.length === 0) {
+      console.log(
+        `[extractExpenseSummaryCharts][${itemIdx}] Charts field missing or not an array. structured:`,
+        structured
+      );
       continue;
     }
 
-    const chartEntries: Array<[string, any, string]> = [
-      ['bar_chart', charts.bar_chart ?? charts.barChart, 'bar'],
-      ['pie_chart', charts.pie_chart ?? charts.pieChart, 'pie'],
-    ];
-
-    for (const [chartKey, chart, suffix] of chartEntries) {
+    charts.forEach((chart: any, chartIdx: number) => {
       if (!chart || typeof chart !== 'object') {
-        console.log(`[extractExpenseSummaryCharts][${itemIdx}] Chart "${chartKey}" missing or not an object:`, chart);
-        continue;
+        console.log(
+          `[extractExpenseSummaryCharts][${itemIdx}] Chart index ${chartIdx} missing or not an object:`,
+          chart
+        );
+        return;
       }
 
-      console.log(`[extractExpenseSummaryCharts][${itemIdx}] Chart "${chartKey}":`, chart);
+      console.log(`[extractExpenseSummaryCharts][${itemIdx}] Chart[${chartIdx}]:`, chart);
 
       const base64Value =
         chart.base64_data ?? chart.base64Data ?? chart.image_base64 ?? chart.imageBase64;
@@ -170,12 +172,14 @@ function extractExpenseSummaryCharts(newItems: any[]): WorkflowImage[] {
           : undefined;
 
       if (!normalizedBase64 && !normalizedUrl) {
-        console.log(`[extractExpenseSummaryCharts][${itemIdx}] Skipping chart "${chartKey}": no base64 or url.`);
-        continue;
+        console.log(
+          `[extractExpenseSummaryCharts][${itemIdx}] Skipping chart index ${chartIdx}: no base64 or url.`
+        );
+        return;
       }
 
       const imageObj = {
-        fileName: `expense-summary-${suffix}.png`,
+        fileName: chart.file_name ?? chart.fileName ?? `expense-summary-${chartIdx + 1}.png`,
         mimeType,
         base64Data: normalizedBase64,
         imageUrl: normalizedUrl,
@@ -185,7 +189,7 @@ function extractExpenseSummaryCharts(newItems: any[]): WorkflowImage[] {
       console.log(
         `[extractExpenseSummaryCharts][${itemIdx}] Extracted chart:`,
         JSON.stringify({
-          chartKey,
+          index: chartIdx,
           fileName: imageObj.fileName,
           base64Len: normalizedBase64?.length,
           imageUrl: normalizedUrl,
@@ -194,8 +198,9 @@ function extractExpenseSummaryCharts(newItems: any[]): WorkflowImage[] {
         })
       );
 
-      collected.push(imageObj);
-    }
+      itemCharts.push(imageObj);
+    });
+    collected.push(itemCharts);
   }
 
   console.log(`[extractExpenseSummaryCharts] Collected total: ${collected.length}`);

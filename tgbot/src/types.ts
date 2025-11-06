@@ -23,5 +23,5 @@ export type WorkflowImage = {
 
 export type WorkflowResult = {
   output_text: string;
-  images: WorkflowImage[];
+  images: WorkflowImage[][];
 };

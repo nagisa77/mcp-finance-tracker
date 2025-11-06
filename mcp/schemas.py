@@ -126,19 +126,6 @@ class ChartImage(BaseModel):
     )
 
 
-class ExpenseSummaryCharts(BaseModel):
-    """Collection of chart images illustrating the expense summary."""
-
-    bar_chart: ChartImage = Field(
-        description="Horizontal bar chart showing expense amount per category.",
-        alias="bar_chart",
-    )
-    pie_chart: ChartImage = Field(
-        description="Pie chart visualising the percentage contribution per category.",
-        alias="pie_chart",
-    )
-
-
 class ExpenseSummaryResult(BaseModel):
     """Summary of expenses grouped by category for a given period."""
 
@@ -158,8 +145,8 @@ class ExpenseSummaryResult(BaseModel):
         default_factory=list,
         description="Expenses for each category sorted by amount descending.",
     )
-    charts: ExpenseSummaryCharts | None = Field(
-        default=None,
+    charts: List[ChartImage] = Field(
+        default_factory=list,
         description="Optional chart visualisations hosted remotely (e.g. on COS).",
     )
 
