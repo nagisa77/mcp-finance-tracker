@@ -337,26 +337,42 @@ def generate_expense_comparison_chart(
     second_breakdown: list[CategoryExpenseBreakdown],
     second_label: str,
 ) -> list[ChartImage]:
-    """Generate comparison bar chart for two expense breakdowns."""
+    """Generate comparison charts for two expense breakdowns."""
 
-    chart_bytes = _render_comparison_bar_chart(
+    chart_images: list[ChartImage] = []
+
+    bar_chart_bytes = _render_comparison_bar_chart(
         first_breakdown,
         first_label,
         second_breakdown,
         second_label,
     )
 
-    if not chart_bytes:
-        return []
+    if bar_chart_bytes:
+        bar_chart_url = upload_chart_image(bar_chart_bytes, "comparison")
+        chart_images.append(
+            ChartImage(
+                title=f"分类支出对比（{first_label} vs {second_label}）",
+                image_url=bar_chart_url,
+                mime_type="image/png",
+            )
+        )
 
-    chart_url = upload_chart_image(chart_bytes, "comparison")
-    return [
+    first_pie_bytes = _render_pie_chart(first_breakdown, first_label)
+    second_pie_bytes = _render_pie_chart(second_breakdown, second_label)
+    combined_pie_bytes = _merge_chart_images_horizontally(
+        first_pie_bytes, second_pie_bytes
+    )
+    combined_pie_url = upload_chart_image(combined_pie_bytes, "comparison-pie")
+    chart_images.append(
         ChartImage(
-            title=f"分类支出对比（{first_label} vs {second_label}）",
-            image_url=chart_url,
+            title=f"分类支出占比对比（{first_label} vs {second_label}）",
+            image_url=combined_pie_url,
             mime_type="image/png",
         )
-    ]
+    )
+
+    return chart_images
 
 
 def _granularity_display(granularity: str) -> str:
