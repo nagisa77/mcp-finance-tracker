@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import date
+from datetime import date, datetime
 from typing import Annotated, Literal
 
 from mcp.server.fastmcp import Context, FastMCP
@@ -15,6 +15,7 @@ from .crud import (
     get_categories_by_ids,
     get_category_filtered_expenses,
     get_expense_summary_by_category,
+    get_expense_timeline,
     get_total_expense,
     get_total_expense_for_categories,
     list_categories,
@@ -34,14 +35,19 @@ from .schemas import (
     ExpenseComparisonResult,
     ExpenseComparisonSnapshot,
     ExpenseSummaryResult,
+    ExpenseTimelineBucket,
+    ExpenseTimelineResult,
+    ExpenseTimelineSnapshot,
 )
 from .services import (
     generate_expense_comparison_chart,
     generate_expense_summary_charts,
+    generate_expense_timeline_chart,
     parse_period,
     require_user_id,
     resolve_category,
     unique_category_ids,
+    validate_granularity,
 )
 from .services.cos_storage import CosConfigurationError
 
@@ -397,6 +403,186 @@ async def compare_expense_periods(
         period=period,
         first=first_snapshot,
         second=second_snapshot,
+        charts=charts,
+    )
+
+
+@mcp.tool(
+    name="get_expense_timeline",
+    description=(
+        "获取指定周期内的支出时间序列，支持按分类筛选与可选的周期对比。"
+        f"当前日期：{CURRENT_DATE_TEXT}"
+    ),
+    structured_output=True,
+)
+async def get_expense_timeline_tool(
+    period: Annotated[
+        Literal["year", "month", "week"],
+        PydanticField(description="统计周期，可选值为 year、month、week。"),
+    ],
+    reference: Annotated[
+        str,
+        PydanticField(
+            description=(
+                "用于确定时间范围的参考值。year 传 YYYY，month 传 YYYY-MM，"
+                "week 传 YYYY-Www。"
+            )
+        ),
+    ],
+    granularity: Annotated[
+        Literal["month", "week", "day"],
+        PydanticField(description="统计颗粒度，可选值为 month、week、day。"),
+    ],
+    category_ids: Annotated[
+        list[int] | None,
+        PydanticField(
+            default=None,
+            description="需要统计的分类 ID 列表，留空则统计全部支出。",
+        ),
+    ] = None,
+    comparison_reference: Annotated[
+        str | None,
+        PydanticField(
+            default=None,
+            description=(
+                "可选的对比周期参考值。填写后将对比两个周期的支出趋势。"
+            ),
+        ),
+    ] = None,
+    ctx: Context | None = None,
+) -> ExpenseTimelineResult:
+    """获取指定周期（可选分类）的支出时间序列数据。"""
+
+    user_id = require_user_id(ctx)
+
+    category_id_list = unique_category_ids(category_ids or [])
+
+    comparison_reference_normalized = (
+        comparison_reference.strip() if comparison_reference else None
+    )
+
+    try:
+        validate_granularity(period, granularity)
+    except ValueError as exc:
+        raise ValueError(str(exc)) from exc
+
+    try:
+        start, end, label = parse_period(period, reference)
+        comparison_start: datetime | None = None
+        comparison_end: datetime | None = None
+        comparison_label: str | None = None
+        if comparison_reference_normalized:
+            comparison_start, comparison_end, comparison_label = parse_period(
+                period, comparison_reference_normalized
+            )
+    except ValueError as exc:
+        raise ValueError(str(exc)) from exc
+
+    try:
+        with session_scope() as session:
+            ensure_default_categories(session, user_id)
+
+            selected_categories: list[CategoryRead] = []
+            if category_id_list:
+                categories = get_categories_by_ids(session, category_id_list, user_id)
+                existing_ids = {category.id for category in categories}
+                missing_ids = [
+                    str(category_id)
+                    for category_id in category_id_list
+                    if category_id not in existing_ids
+                ]
+                if missing_ids:
+                    raise ValueError(
+                        "未找到以下分类 ID：" + ", ".join(missing_ids)
+                    )
+                selected_categories = [
+                    CategoryRead.model_validate(category)
+                    for category in categories
+                ]
+
+            timeline_rows = get_expense_timeline(
+                session,
+                start,
+                end,
+                user_id,
+                granularity,
+                category_id_list,
+            )
+            timeline_buckets = [
+                ExpenseTimelineBucket.model_validate(bucket)
+                for bucket in timeline_rows
+            ]
+            total_expense = sum(
+                float(bucket.total_expense) for bucket in timeline_buckets
+            )
+
+            primary_snapshot = ExpenseTimelineSnapshot(
+                period=period,
+                reference=reference,
+                resolved_label=label,
+                start=start,
+                end=end,
+                granularity=granularity,
+                category_ids=category_id_list,
+                selected_categories=selected_categories,
+                total_expense=total_expense,
+                buckets=timeline_buckets,
+            )
+
+            comparison_snapshot: ExpenseTimelineSnapshot | None = None
+            comparison_buckets: list[ExpenseTimelineBucket] = []
+            if comparison_reference_normalized and comparison_start and comparison_end:
+                comparison_rows = get_expense_timeline(
+                    session,
+                    comparison_start,
+                    comparison_end,
+                    user_id,
+                    granularity,
+                    category_id_list,
+                )
+                comparison_buckets = [
+                    ExpenseTimelineBucket.model_validate(bucket)
+                    for bucket in comparison_rows
+                ]
+                comparison_total = sum(
+                    float(bucket.total_expense) for bucket in comparison_buckets
+                )
+                comparison_snapshot = ExpenseTimelineSnapshot(
+                    period=period,
+                    reference=comparison_reference_normalized,
+                    resolved_label=comparison_label or comparison_reference_normalized,
+                    start=comparison_start,
+                    end=comparison_end,
+                    granularity=granularity,
+                    category_ids=category_id_list,
+                    selected_categories=selected_categories,
+                    total_expense=comparison_total,
+                    buckets=comparison_buckets,
+                )
+    except ValueError:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("获取支出时间序列失败: %s", exc)
+        raise ValueError(f"获取支出时间序列失败：{exc}") from exc
+
+    charts: list[ChartImage] = []
+    if COS_BASE_URL:
+        try:
+            charts = generate_expense_timeline_chart(
+                primary_snapshot.buckets,
+                granularity,
+                primary_snapshot.resolved_label,
+                comparison_snapshot.buckets if comparison_snapshot else None,
+                comparison_snapshot.resolved_label if comparison_snapshot else None,
+            )
+        except (ValueError, CosConfigurationError) as exc:
+            logger.warning("生成支出趋势图失败: %s", exc)
+
+    return ExpenseTimelineResult(
+        period=period,
+        granularity=granularity,
+        primary=primary_snapshot,
+        comparison=comparison_snapshot,
         charts=charts,
     )
 

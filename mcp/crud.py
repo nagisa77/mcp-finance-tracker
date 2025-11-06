@@ -1,6 +1,6 @@
 """数据库 CRUD 操作."""
-from datetime import datetime
-from typing import Iterable, List, Optional
+from datetime import datetime, timedelta
+from typing import Iterable, List, Literal, Optional
 
 from sqlalchemy import Select, asc, desc, func, select
 from sqlalchemy.orm import Session
@@ -229,3 +229,113 @@ def get_total_expense_for_categories(
         )
     )
     return float(session.execute(total_stmt).scalar_one())
+
+
+def get_expense_timeline(
+    session: Session,
+    start: datetime,
+    end: datetime,
+    user_id: str,
+    granularity: Literal["month", "week", "day"],
+    category_ids: Iterable[int] | None = None,
+) -> list[dict[str, object]]:
+    """Aggregate expenses into ordered time buckets for the given granularity."""
+
+    category_id_list = list(category_ids or [])
+
+    stmt: Select = (
+        select(Bill.created_at, Bill.amount)
+        .where(
+            Bill.type == BillType.EXPENSE,
+            Bill.created_at >= start,
+            Bill.created_at < end,
+            Bill.user_id == user_id,
+        )
+        .order_by(asc(Bill.created_at))
+    )
+
+    if category_id_list:
+        stmt = stmt.where(Bill.category_id.in_(category_id_list))
+
+    results = session.execute(stmt).all()
+
+    def _strip_timezone(value: datetime) -> datetime:
+        if value.tzinfo is not None:
+            return value.replace(tzinfo=None)
+        return value
+
+    def _floor_to_granularity(value: datetime) -> datetime:
+        if granularity == "day":
+            return value.replace(hour=0, minute=0, second=0, microsecond=0)
+        if granularity == "week":
+            floored = value - timedelta(days=value.weekday())
+            return floored.replace(hour=0, minute=0, second=0, microsecond=0)
+        if granularity == "month":
+            return value.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        raise ValueError("不支持的统计颗粒度。")
+
+    def _advance(value: datetime) -> datetime:
+        if granularity == "day":
+            return value + timedelta(days=1)
+        if granularity == "week":
+            return value + timedelta(weeks=1)
+        if granularity == "month":
+            year = value.year + (value.month // 12)
+            month = value.month % 12 + 1
+            return value.replace(year=year, month=month, day=1)
+        raise ValueError("不支持的统计颗粒度。")
+
+    def _format_label(value: datetime) -> str:
+        if granularity == "day":
+            return value.strftime("%Y-%m-%d")
+        if granularity == "week":
+            iso = value.isocalendar()
+            return f"{iso.year:04d}-W{iso.week:02d}"
+        if granularity == "month":
+            return value.strftime("%Y-%m")
+        raise ValueError("不支持的统计颗粒度。")
+
+    def _format_display_label(value: datetime) -> str:
+        if granularity == "day":
+            return value.strftime("%m-%d")
+        if granularity == "week":
+            iso = value.isocalendar()
+            return f"W{iso.week:02d}"
+        if granularity == "month":
+            return value.strftime("%m月")
+        raise ValueError("不支持的统计颗粒度。")
+
+    buckets: list[dict[str, object]] = []
+    if start >= end:
+        return buckets
+
+    current = _floor_to_granularity(start)
+    while current < start:
+        current = _advance(current)
+
+    while current < end:
+        next_boundary = _advance(current)
+        buckets.append(
+            {
+                "label": _format_label(current),
+                "display_label": _format_display_label(current),
+                "start": current,
+                "end": next_boundary if next_boundary <= end else end,
+                "total_expense": 0.0,
+            }
+        )
+        current = next_boundary
+
+    bucket_map = {bucket["start"]: bucket for bucket in buckets}
+
+    for row in results:
+        created_at = _strip_timezone(row.created_at)
+        bucket_start = _floor_to_granularity(created_at)
+        bucket = bucket_map.get(bucket_start)
+        if bucket is None:
+            continue
+        bucket["total_expense"] = float(bucket.get("total_expense", 0.0)) + float(
+            row.amount or 0.0
+        )
+
+    return buckets

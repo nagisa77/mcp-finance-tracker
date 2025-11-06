@@ -14,6 +14,7 @@ const MCP_BASE_CONFIG = {
     'get_expense_summary',
     'get_category_expense_detail',
     'compare_expense_periods',
+    'get_expense_timeline',
   ],
   requireApproval: 'never' as const,
 };

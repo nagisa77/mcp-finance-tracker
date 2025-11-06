@@ -57,3 +57,23 @@ def parse_period(
         raise ValueError("不支持的统计粒度。")
 
     return start, end, label
+
+
+def validate_granularity(
+    period: Literal["year", "month", "week"],
+    granularity: Literal["month", "week", "day"],
+) -> None:
+    """Ensure the requested granularity is valid for the given period."""
+
+    allowed_map: dict[str, set[str]] = {
+        "year": {"month", "week", "day"},
+        "month": {"week", "day"},
+        "week": {"day"},
+    }
+
+    allowed = allowed_map.get(period)
+    if allowed is None:
+        raise ValueError("不支持的统计周期，请选择年、月或周。")
+
+    if granularity not in allowed:
+        raise ValueError("颗粒度必须小于周期，请选择更细的颗粒度。")

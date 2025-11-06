@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import logging
 from io import BytesIO
-from typing import Iterable
+from typing import Iterable, Sequence
 
 import matplotlib
 import numpy as np
@@ -13,7 +13,11 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
 
 from ..config import OTHER_CATEGORY_COLOR, UNCATEGORIZED_CATEGORY_COLOR
-from ..schemas import CategoryExpenseBreakdown, ChartImage
+from ..schemas import (
+    CategoryExpenseBreakdown,
+    ChartImage,
+    ExpenseTimelineBucket,
+)
 from .cos_storage import upload_chart_image
 
 logger = logging.getLogger(__name__)
@@ -349,6 +353,181 @@ def generate_expense_comparison_chart(
     return [
         ChartImage(
             title=f"分类支出对比（{first_label} vs {second_label}）",
+            image_url=chart_url,
+            mime_type="image/png",
+        )
+    ]
+
+
+def _granularity_display(granularity: str) -> str:
+    return {"day": "日", "week": "周", "month": "月"}.get(granularity, granularity)
+
+
+def _render_timeline_single_chart(
+    buckets: Sequence[ExpenseTimelineBucket],
+    period_label: str,
+    granularity: str,
+) -> bytes | None:
+    bucket_list = list(buckets)
+    if not bucket_list:
+        return None
+
+    labels = [bucket.display_label or bucket.label for bucket in bucket_list]
+    amounts = [bucket.total_expense for bucket in bucket_list]
+
+    figure_width = max(6.0, 0.6 * len(labels))
+    fig, ax = plt.subplots(figsize=(figure_width, 5))
+
+    x_positions = np.arange(len(labels))
+    bars = ax.bar(x_positions, amounts, color="#5B8FF9")
+    ax.set_ylabel("金额 (元)")
+    ax.set_title(
+        f"{period_label} 支出趋势（按{_granularity_display(granularity)}统计）"
+    )
+    ax.set_xticks(list(x_positions))
+    ax.set_xticklabels(labels, rotation=45, ha="right")
+    ax.grid(axis="y", linestyle="--", alpha=0.3)
+
+    max_amount = max(amounts, default=0)
+    if max_amount <= 0:
+        ax.set_ylim(0, 1)
+    else:
+        ax.set_ylim(0, max_amount * 1.2)
+
+    ax.bar_label(
+        bars,
+        labels=[f"{value:.2f}" for value in amounts],
+        padding=3,
+        fontsize=9,
+    )
+
+    fig.tight_layout()
+    return _figure_to_png_bytes(fig)
+
+
+def _render_timeline_comparison_chart(
+    primary: Sequence[ExpenseTimelineBucket],
+    comparison: Sequence[ExpenseTimelineBucket],
+    primary_label: str,
+    comparison_label: str,
+    granularity: str,
+) -> bytes | None:
+    primary_list = list(primary)
+    comparison_list = list(comparison)
+
+    if not primary_list and not comparison_list:
+        return None
+
+    max_len = max(len(primary_list), len(comparison_list))
+    if max_len == 0:
+        return None
+
+    labels: list[str] = []
+    primary_amounts: list[float] = []
+    comparison_amounts: list[float] = []
+
+    for index in range(max_len):
+        if index < len(primary_list):
+            labels.append(primary_list[index].display_label or primary_list[index].label)
+        elif index < len(comparison_list):
+            labels.append(
+                comparison_list[index].display_label or comparison_list[index].label
+            )
+        else:
+            labels.append(str(index + 1))
+
+        primary_amounts.append(
+            float(primary_list[index].total_expense) if index < len(primary_list) else 0.0
+        )
+        comparison_amounts.append(
+            float(comparison_list[index].total_expense)
+            if index < len(comparison_list)
+            else 0.0
+        )
+
+    x_positions = np.arange(max_len)
+    bar_width = 0.38
+    figure_width = max(6.0, 0.6 * max_len)
+    fig, ax = plt.subplots(figsize=(figure_width, 5))
+
+    bars_primary = ax.bar(
+        x_positions - bar_width / 2,
+        primary_amounts,
+        bar_width,
+        label=primary_label,
+        color="#5B8FF9",
+        alpha=0.85,
+    )
+    bars_comparison = ax.bar(
+        x_positions + bar_width / 2,
+        comparison_amounts,
+        bar_width,
+        label=comparison_label,
+        color="#5AD8A6",
+        alpha=0.75,
+    )
+
+    ax.set_ylabel("金额 (元)")
+    ax.set_title(
+        f"{primary_label} vs {comparison_label} 支出趋势（按{_granularity_display(granularity)}统计）"
+    )
+    ax.set_xticks(list(x_positions))
+    ax.set_xticklabels(labels, rotation=45, ha="right")
+    ax.legend()
+    ax.grid(axis="y", linestyle="--", alpha=0.3)
+
+    max_amount = max(primary_amounts + comparison_amounts, default=0)
+    if max_amount <= 0:
+        ax.set_ylim(0, 1)
+    else:
+        ax.set_ylim(0, max_amount * 1.2)
+
+    ax.bar_label(
+        bars_primary,
+        labels=[f"{value:.2f}" for value in primary_amounts],
+        padding=3,
+        fontsize=9,
+    )
+    ax.bar_label(
+        bars_comparison,
+        labels=[f"{value:.2f}" for value in comparison_amounts],
+        padding=3,
+        fontsize=9,
+    )
+
+    fig.tight_layout()
+    return _figure_to_png_bytes(fig)
+
+
+def generate_expense_timeline_chart(
+    primary: Sequence[ExpenseTimelineBucket],
+    granularity: str,
+    primary_label: str,
+    comparison: Sequence[ExpenseTimelineBucket] | None = None,
+    comparison_label: str | None = None,
+) -> list[ChartImage]:
+    """Render timeline charts for expense buckets."""
+
+    if comparison and comparison_label:
+        chart_bytes = _render_timeline_comparison_chart(
+            primary,
+            comparison,
+            primary_label,
+            comparison_label,
+            granularity,
+        )
+        title = f"支出趋势对比（{primary_label} vs {comparison_label}）"
+    else:
+        chart_bytes = _render_timeline_single_chart(primary, primary_label, granularity)
+        title = f"支出趋势（{primary_label}）"
+
+    if not chart_bytes:
+        return []
+
+    chart_url = upload_chart_image(chart_bytes, "timeline")
+    return [
+        ChartImage(
+            title=title,
             image_url=chart_url,
             mime_type="image/png",
         )

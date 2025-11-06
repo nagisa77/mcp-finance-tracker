@@ -235,3 +235,70 @@ class CategoryExpenseDetailResult(BaseModel):
         default_factory=list,
         description="Top individual expense bills sorted by amount (up to 20 items).",
     )
+
+
+class ExpenseTimelineBucket(BaseModel):
+    """Aggregated expense statistics for a specific time bucket."""
+
+    label: str = Field(description="Canonical label representing the bucket range.")
+    display_label: str = Field(
+        description="Human friendly label used when rendering charts.",
+    )
+    start: datetime = Field(description="Inclusive start timestamp for the bucket.")
+    end: datetime = Field(description="Exclusive end timestamp for the bucket.")
+    total_expense: float = Field(description="Total expenses that fall into the bucket.")
+
+
+class ExpenseTimelineSnapshot(BaseModel):
+    """Time-series expense snapshot for a specific period and category selection."""
+
+    period: Literal["year", "month", "week"] = Field(
+        description="The primary time period that defines the snapshot.",
+    )
+    reference: str = Field(
+        description="User supplied reference string used to resolve the time period.",
+    )
+    resolved_label: str = Field(
+        description="Human readable representation of the requested period.",
+    )
+    start: datetime = Field(description="Inclusive start timestamp of the period.")
+    end: datetime = Field(description="Exclusive end timestamp of the period.")
+    granularity: Literal["month", "week", "day"] = Field(
+        description="Granularity used for aggregating expenses within the period.",
+    )
+    category_ids: List[int] = Field(
+        description="Category identifiers included in the snapshot (empty for all).",
+    )
+    selected_categories: List[CategoryRead] = Field(
+        default_factory=list,
+        description="Detailed information about the selected categories.",
+    )
+    total_expense: float = Field(
+        description="Total expense amount captured by this snapshot.",
+    )
+    buckets: List[ExpenseTimelineBucket] = Field(
+        default_factory=list,
+        description="Aggregated expense buckets ordered by time.",
+    )
+
+
+class ExpenseTimelineResult(BaseModel):
+    """Response model returned by the expense timeline tool."""
+
+    period: Literal["year", "month", "week"] = Field(
+        description="The period requested when generating the timeline.",
+    )
+    granularity: Literal["month", "week", "day"] = Field(
+        description="Granularity used for aggregating expenses within each bucket.",
+    )
+    primary: ExpenseTimelineSnapshot = Field(
+        description="Snapshot representing the requested period.",
+    )
+    comparison: Optional[ExpenseTimelineSnapshot] = Field(
+        default=None,
+        description="Optional snapshot for the comparison period if provided.",
+    )
+    charts: List[ChartImage] = Field(
+        default_factory=list,
+        description="Optional chart images hosted remotely (e.g. on COS).",
+    )
