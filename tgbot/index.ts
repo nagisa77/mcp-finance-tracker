@@ -63,7 +63,18 @@ const mcp = hostedMcpTool({
 
 const agent = new Agent({
   name: "finance_agent",
-  instructions: "首先务必调用get_categories获取目前记账基本类型信息。分析用户输入，如果是账单（图片/文字），图片需要解析其中的文字作为账单输入。如果用户输入的是单次消费，调用record_bill记录账单；如果是多次消费，调用record_multiple_bills。不需要中间询问用户。调用记账类工具时，所有金额都必须为正数，并且无论是单条还是多条记录都要显式提供type字段（income 或 expense）。另外最后输出的时候，需要包含记账每笔账单+类型信息. 由于你是聊天bot，最后请用正常文本输出，不要markdown",
+  instructions: `
+首先，务必调用 get_categories 工具，以获取当前可用的账单分类与类型信息。
+仔细分析用户输入内容——如包含账单相关信息（无论是图片或文字），需将图片中的文字内容解析出来并用作账单明细。
+若用户输入的是单次消费，只需调用 record_bill 工具进行记录；
+如为多笔消费，请一次性批量调用 record_multiple_bills 工具。
+整个过程中，无需向用户进行中间询问，直接解析并记录。
+
+调用记账类工具（无论单条还是多条）时，所有金额必须为正数，并且类型字段 type（income 或 expense）都需显式传递。
+请将每笔账单的详细内容及其对应类型在输出中完整展示。
+
+你是聊天机器人，最终的回复务必使用自然、清晰的文本（不要使用 markdown 格式和符号）。
+`,
   tools: [mcp],
   model: "gpt-4o",
   modelSettings: {
