@@ -179,6 +179,25 @@ if (!token) {
 
 const bot = new TelegramBot(token, { polling: true });
 
+bot.setMyCommands([
+  { command: "start", description: "开始使用记账机器人" },
+  { command: "report", description: "生成最近开销报表" },
+  { command: "compare", description: "对比本周和上周支出" },
+  { command: "detail", description: "查看分类支出详情" },
+]);
+
+bot.onText(/\/report/, (msg) => {
+  bot.sendMessage(msg.chat.id, QUICK_ACTIONS["生成最近开销报表"]);
+});
+
+bot.onText(/\/compare/, (msg) => {
+  bot.sendMessage(msg.chat.id, QUICK_ACTIONS["对比本周和上周支出"]);
+});
+
+bot.onText(/\/detail/, (msg) => {
+  bot.sendMessage(msg.chat.id, QUICK_ACTIONS["查看分类支出详情"]);
+});
+
 bot.on('message', async (msg: Message) => {
   const chatId = msg.chat.id;
 
