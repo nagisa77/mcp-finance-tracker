@@ -21,12 +21,21 @@ class Base(DeclarativeBase):
     """SQLAlchemy Declarative Base."""
 
 
+class CategoryType(str, Enum):
+    """分类类型枚举."""
+
+    INCOME = "income"
+    EXPENSE = "expense"
+
+
 class Category(Base):
     """账单分类."""
 
     __tablename__ = "categories"
     __table_args__ = (
-        UniqueConstraint("user_id", "name", name="uq_category_user_name"),
+        UniqueConstraint(
+            "user_id", "name", "type", name="uq_category_user_name_type"
+        ),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -34,6 +43,11 @@ class Category(Base):
     name: Mapped[str] = mapped_column(String(64), nullable=False)
     description: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     color: Mapped[str] = mapped_column(String(7), nullable=False, default="#5E81AC")
+    type: Mapped[CategoryType] = mapped_column(
+        SAEnum(CategoryType, name="category_type", native_enum=False),
+        nullable=False,
+        default=CategoryType.EXPENSE,
+    )
 
     bills: Mapped[List["Bill"]] = relationship(back_populates="category", cascade="all,delete")
 
