@@ -161,7 +161,6 @@ def create_bill(
     if data.source_asset_id is None or data.target_asset_id is None:
         raise ValueError("记录账单时必须指定源资产与目标资产")
 
-    source_amount = data.source_amount if data.source_amount is not None else data.amount
     target_amount = data.target_amount if data.target_amount is not None else data.amount
 
     bill = Bill(
@@ -172,7 +171,6 @@ def create_bill(
         category=category,
         source_asset_id=data.source_asset_id,
         target_asset_id=data.target_asset_id,
-        source_amount=source_amount,
         target_amount=target_amount,
     )
     session.add(bill)

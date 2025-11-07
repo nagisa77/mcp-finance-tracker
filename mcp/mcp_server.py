@@ -146,7 +146,6 @@ async def record_bill(
                 update={
                     "source_asset_id": cny_asset.id,
                     "target_asset_id": cny_asset.id,
-                    "source_amount": bill_payload.amount,
                     "target_amount": bill_payload.amount,
                 }
             )
@@ -215,7 +214,6 @@ async def record_multiple_bills(
                         update={
                             "source_asset_id": cny_asset.id,
                             "target_asset_id": cny_asset.id,
-                            "source_amount": bill.amount,
                             "target_amount": bill.amount,
                         }
                     )
@@ -268,10 +266,6 @@ async def record_investment_transaction(
         int,
         PydanticField(ge=1, description="源资产 ID。"),
     ],
-    source_amount: Annotated[
-        float,
-        PydanticField(gt=0, description="源资产减少的数量。"),
-    ],
     target_asset_id: Annotated[
         int,
         PydanticField(ge=1, description="目标资产 ID。"),
@@ -294,7 +288,6 @@ async def record_investment_transaction(
         payload = InvestmentRecordCreate(
             mode=mode,
             source_asset_id=source_asset_id,
-            source_amount=source_amount,
             target_asset_id=target_asset_id,
             target_amount=target_amount,
             description=description,
@@ -339,7 +332,6 @@ async def record_investment_transaction(
                 description=payload.description,
                 source_asset_id=payload.source_asset_id,
                 target_asset_id=payload.target_asset_id,
-                source_amount=payload.source_amount,
                 target_amount=payload.target_amount,
             )
             bill = create_bill(session, bill_data, category_obj, user_id)

@@ -252,17 +252,11 @@ def _ensure_bill_amount_columns(connection) -> None:
     inspector = inspect(connection)
     columns = {col["name"] for col in inspector.get_columns("bills")}
 
-    if "source_amount" not in columns:
-        connection.execute(text("ALTER TABLE bills ADD COLUMN source_amount FLOAT"))
+    if "source_amount" in columns:
+        connection.execute(text("ALTER TABLE bills DROP COLUMN source_amount"))
     if "target_amount" not in columns:
         connection.execute(text("ALTER TABLE bills ADD COLUMN target_amount FLOAT"))
 
-    connection.execute(
-        text(
-            "UPDATE bills SET source_amount = amount "
-            "WHERE source_amount IS NULL"
-        )
-    )
     connection.execute(
         text(
             "UPDATE bills SET target_amount = amount "
@@ -272,9 +266,6 @@ def _ensure_bill_amount_columns(connection) -> None:
 
     dialect_name = connection.dialect.name
     if dialect_name.startswith("mysql"):
-        connection.execute(
-            text("ALTER TABLE bills MODIFY COLUMN source_amount FLOAT NOT NULL")
-        )
         connection.execute(
             text("ALTER TABLE bills MODIFY COLUMN target_amount FLOAT NOT NULL")
         )
