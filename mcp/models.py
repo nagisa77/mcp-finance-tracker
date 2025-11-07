@@ -44,7 +44,12 @@ class Category(Base):
     description: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     color: Mapped[str] = mapped_column(String(7), nullable=False, default="#5E81AC")
     type: Mapped[CategoryType] = mapped_column(
-        SAEnum(CategoryType, name="category_type", native_enum=False),
+        SAEnum(
+            CategoryType,
+            name="category_type",
+            native_enum=False,
+            values_callable=lambda enum_cls: [member.value for member in enum_cls],
+        ),
         nullable=False,
         default=CategoryType.EXPENSE,
     )
@@ -71,7 +76,13 @@ class Bill(Base):
     user_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     amount: Mapped[float] = mapped_column(Float, nullable=False)
     type: Mapped[BillType] = mapped_column(
-        SAEnum(BillType, name="bill_type", native_enum=False), nullable=False
+        SAEnum(
+            BillType,
+            name="bill_type",
+            native_enum=False,
+            values_callable=lambda enum_cls: [member.value for member in enum_cls],
+        ),
+        nullable=False,
     )
     description: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
