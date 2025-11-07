@@ -20,19 +20,9 @@ def ensure_default_categories(session: Session, user_id: str) -> None:
         ).all()
     }
     for category in DEFAULT_CATEGORIES:
-        category_name = category["name"]
-        category_type = BillType(category.get("type", BillType.EXPENSE.value))
-        existing = existing_categories.get(category_name)
+        existing = existing_categories.get(category["name"])
         if existing is None:
-            session.add(
-                Category(
-                    user_id=user_id,
-                    name=category_name,
-                    description=category.get("description"),
-                    color=category.get("color", "#5E81AC"),
-                    type=category_type,
-                )
-            )
+            session.add(Category(user_id=user_id, **category))
             continue
 
         updated = False
@@ -41,9 +31,6 @@ def ensure_default_categories(session: Session, user_id: str) -> None:
             updated = True
         if category.get("color") and existing.color != category["color"]:
             existing.color = category["color"]
-            updated = True
-        if existing.type != category_type:
-            existing.type = category_type
             updated = True
         if updated:
             session.add(existing)

@@ -34,11 +34,6 @@ class Category(Base):
     name: Mapped[str] = mapped_column(String(64), nullable=False)
     description: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     color: Mapped[str] = mapped_column(String(7), nullable=False, default="#5E81AC")
-    type: Mapped[BillType] = mapped_column(
-        SAEnum(BillType, name="category_type", native_enum=False),
-        nullable=False,
-        default=BillType.EXPENSE,
-    )
 
     bills: Mapped[List["Bill"]] = relationship(back_populates="category", cascade="all,delete")
 
