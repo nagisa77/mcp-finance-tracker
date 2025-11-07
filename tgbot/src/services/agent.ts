@@ -18,6 +18,7 @@ const MCP_BASE_CONFIG = {
     'get_category_finance_detail',
     'compare_finance_periods',
     'get_finance_timeline',
+    'record_investment_transaction', 
   ],
   requireApproval: 'never' as const,
 };
