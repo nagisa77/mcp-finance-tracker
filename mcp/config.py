@@ -51,6 +51,15 @@ CATEGORY_COLOR_PALETTE = [
 UNCATEGORIZED_CATEGORY_COLOR = "#CBD5E1"
 OTHER_CATEGORY_COLOR = "#E2E8F0"
 
+DEFAULT_ASSETS = [
+    {"name": "gold", "description": "黄金持仓"},
+    {"name": "CNY", "description": "人民币现金或等价物"},
+    {"name": "btc", "description": "比特币资产"},
+    {"name": "eth", "description": "以太坊资产"},
+    {"name": "ada", "description": "Cardano(ADA)资产"},
+    {"name": "xrp", "description": "Ripple(XRP)资产"},
+]
+
 DEFAULT_CATEGORIES = [
     {
         "name": "外卖",
@@ -165,6 +174,12 @@ DEFAULT_CATEGORIES = [
         "description": "副业或兼职产生的收入",
         "color": "#F2A7B3",
         "type": "income",
+    },
+    {
+        "name": "投资",
+        "description": "资产买卖与转换相关的记录",
+        "color": "#9ADCFF",
+        "type": "investment",
     },
 ]
 

@@ -11,8 +11,12 @@ from pydantic import Field as PydanticField, ValidationError
 from .config import COS_BASE_URL
 from .crud import (
     create_bill,
+    ensure_default_assets,
     ensure_default_categories,
+    get_asset_by_id,
+    get_asset_by_name,
     get_categories_by_ids,
+    get_category_by_name,
     get_category_filtered_expenses,
     get_expense_summary_by_category,
     get_expense_timeline,
@@ -20,7 +24,7 @@ from .crud import (
     get_total_expense_for_categories,
     list_categories,
 )
-from .models import BillType
+from .models import BillType, Category, CategoryType
 from .database import init_database, session_scope
 from .schemas import (
     BillBatchRecordResult,
@@ -33,6 +37,7 @@ from .schemas import (
     CategoryListResult,
     CategoryRead,
     ChartImage,
+    InvestmentRecordCreate,
     ExpenseComparisonResult,
     ExpenseComparisonSnapshot,
     ExpenseSummaryResult,
@@ -117,7 +122,7 @@ async def record_bill(
 
     user_id = require_user_id(ctx)
     try:
-        bill_data = BillCreate(
+        bill_payload = BillCreate(
             amount=amount,
             type=type,
             category_id=category_id,
@@ -130,8 +135,20 @@ async def record_bill(
     try:
         with session_scope() as session:
             ensure_default_categories(session, user_id)
+            ensure_default_assets(session)
+            cny_asset = get_asset_by_name(session, "CNY")
+            if cny_asset is None:
+                raise ValueError("未找到默认人民币资产，请先初始化资产列表。")
             category_obj, category_display = resolve_category(
-                session, bill_data.category_id, user_id
+                session, bill_payload.category_id, user_id
+            )
+            bill_data = bill_payload.model_copy(
+                update={
+                    "source_asset_id": cny_asset.id,
+                    "target_asset_id": cny_asset.id,
+                    "source_amount": bill_payload.amount,
+                    "target_amount": bill_payload.amount,
+                }
             )
             bill = create_bill(session, bill_data, category_obj, user_id)
             bill_model = BillRead.model_validate(bill)
@@ -182,6 +199,10 @@ async def record_multiple_bills(
     try:
         with session_scope() as session:
             ensure_default_categories(session, user_id)
+            ensure_default_assets(session)
+            cny_asset = get_asset_by_name(session, "CNY")
+            if cny_asset is None:
+                raise ValueError("未找到默认人民币资产，请先初始化资产列表。")
             bill_models: list[BillRead] = []
             failed_records: list[str] = []
 
@@ -190,9 +211,17 @@ async def record_multiple_bills(
                     category_obj, _ = resolve_category(
                         session, bill.category_id, user_id
                     )
+                    enriched_bill = bill.model_copy(
+                        update={
+                            "source_asset_id": cny_asset.id,
+                            "target_asset_id": cny_asset.id,
+                            "source_amount": bill.amount,
+                            "target_amount": bill.amount,
+                        }
+                    )
                     created_bill = create_bill(
                         session,
-                        bill,
+                        enriched_bill,
                         category_obj,
                         user_id,
                     )
@@ -213,16 +242,122 @@ async def record_multiple_bills(
             f"✅ 成功记录 {success_count} 条账单。",
             f"⚠️ 有 {failure_count} 条账单记录失败。" if failure_count else "",
         ]
+        if failed_records:
+            status_lines.extend(failed_records)
         status_message = "\n".join(filter(None, status_lines))
 
-        return BillBatchRecordResult(
-            message=status_message,
-            success_records=bill_models,
-            failed_records=failed_records,
-        )
+        return BillBatchRecordResult(message=status_message, records=bill_models)
     except Exception as exc:  # noqa: BLE001
         logger.exception("批量记录账单失败: %s", exc)
         raise ValueError(f"批量记录账单失败：{exc}") from exc
+
+
+@mcp.tool(
+    name="record_investment_transaction",
+    description=(
+        "记录一笔资产的投资或获利行为，支持指定源/目标资产及变动数量。"
+    ),
+    structured_output=True,
+)
+async def record_investment_transaction(
+    mode: Annotated[
+        Literal["invest", "profit"],
+        PydanticField(description="操作类型：invest 表示投资，profit 表示获利。"),
+    ],
+    source_asset_id: Annotated[
+        int,
+        PydanticField(ge=1, description="源资产 ID。"),
+    ],
+    source_amount: Annotated[
+        float,
+        PydanticField(gt=0, description="源资产减少的数量。"),
+    ],
+    target_asset_id: Annotated[
+        int,
+        PydanticField(ge=1, description="目标资产 ID。"),
+    ],
+    target_amount: Annotated[
+        float,
+        PydanticField(gt=0, description="目标资产增加的数量。"),
+    ],
+    description: Annotated[
+        str | None,
+        PydanticField(default=None, description="该笔记录的备注，可选。"),
+    ] = None,
+    ctx: Context | None = None,
+) -> BillRecordResult:
+    """记录一笔投资或获利账单."""
+
+    user_id = require_user_id(ctx)
+
+    try:
+        payload = InvestmentRecordCreate(
+            mode=mode,
+            source_asset_id=source_asset_id,
+            source_amount=source_amount,
+            target_asset_id=target_asset_id,
+            target_amount=target_amount,
+            description=description,
+        )
+    except ValidationError as exc:
+        logger.warning("投资/获利数据校验失败: %s", exc)
+        raise ValueError("投资或获利数据不合法，请检查输入参数。") from exc
+
+    try:
+        with session_scope() as session:
+            ensure_default_categories(session, user_id)
+            ensure_default_assets(session)
+            source_asset = get_asset_by_id(session, payload.source_asset_id)
+            if source_asset is None:
+                raise ValueError(f"未找到源资产：{payload.source_asset_id}")
+            target_asset = get_asset_by_id(session, payload.target_asset_id)
+            if target_asset is None:
+                raise ValueError(f"未找到目标资产：{payload.target_asset_id}")
+
+            category_obj = get_category_by_name(
+                session,
+                "投资",
+                user_id,
+                category_type=CategoryType.INVESTMENT,
+            )
+            if category_obj is None:
+                # Fallback: 创建一个新的投资分类
+                category_obj = Category(
+                    user_id=user_id,
+                    name="投资",
+                    description="资产买卖与转换相关的记录",
+                    color="#9ADCFF",
+                    type=CategoryType.INVESTMENT,
+                )
+                session.add(category_obj)
+                session.flush()
+
+            bill_data = BillCreate(
+                amount=payload.target_amount,
+                type=BillType.INVESTMENT,
+                category_id=category_obj.id,
+                description=payload.description,
+                source_asset_id=payload.source_asset_id,
+                target_asset_id=payload.target_asset_id,
+                source_amount=payload.source_amount,
+                target_amount=payload.target_amount,
+            )
+            bill = create_bill(session, bill_data, category_obj, user_id)
+            bill_model = BillRead.model_validate(bill)
+
+        action_display = "投资" if payload.mode == "invest" else "获利"
+        message = "📈 投资记录成功！" if payload.mode == "invest" else "🎉 获利记录成功！"
+        return BillRecordResult(
+            message=message,
+            category_display=f"{action_display} - {category_obj.name}",
+            bill=bill_model,
+        )
+    except ValidationError as exc:
+        logger.exception("投资/获利账单解析失败: %s", exc)
+        raise ValueError("投资或获利账单数据格式不正确，请稍后重试。") from exc
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("记录投资/获利失败: %s", exc)
+        raise ValueError(f"记录投资/获利失败：{exc}") from exc
 
 
 @mcp.tool(

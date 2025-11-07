@@ -26,6 +26,31 @@ class CategoryType(str, Enum):
 
     INCOME = "income"
     EXPENSE = "expense"
+    INVESTMENT = "investment"
+
+
+class Asset(Base):
+    """资产类型定义."""
+
+    __tablename__ = "assets"
+    __table_args__ = (
+        UniqueConstraint("name", name="uq_asset_name"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String(32), nullable=False)
+    description: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+
+    source_bills: Mapped[List["Bill"]] = relationship(
+        back_populates="source_asset",
+        cascade="all,delete",
+        foreign_keys="Bill.source_asset_id",
+    )
+    target_bills: Mapped[List["Bill"]] = relationship(
+        back_populates="target_asset",
+        cascade="all,delete",
+        foreign_keys="Bill.target_asset_id",
+    )
 
 
 class Category(Base):
@@ -62,6 +87,7 @@ class BillType(str, Enum):
 
     INCOME = "income"
     EXPENSE = "expense"
+    INVESTMENT = "investment"
 
 
 class Bill(Base):
@@ -97,3 +123,15 @@ class Bill(Base):
 
     category_id: Mapped[Optional[int]] = mapped_column(ForeignKey("categories.id"), nullable=True)
     category: Mapped[Optional[Category]] = relationship(back_populates="bills")
+    source_asset_id: Mapped[int] = mapped_column(ForeignKey("assets.id"), nullable=False)
+    target_asset_id: Mapped[int] = mapped_column(ForeignKey("assets.id"), nullable=False)
+    source_amount: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    target_amount: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    source_asset: Mapped[Asset] = relationship(
+        back_populates="source_bills",
+        foreign_keys=[source_asset_id],
+    )
+    target_asset: Mapped[Asset] = relationship(
+        back_populates="target_bills",
+        foreign_keys=[target_asset_id],
+    )
