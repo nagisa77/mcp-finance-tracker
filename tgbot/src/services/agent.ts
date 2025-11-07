@@ -14,10 +14,10 @@ const MCP_BASE_CONFIG = {
     'get_categories',
     'record_bill',
     'record_multiple_bills',
-    'get_expense_summary',
-    'get_category_expense_detail',
-    'compare_expense_periods',
-    'get_expense_timeline',
+    'get_finance_summary',
+    'get_category_finance_detail',
+    'compare_finance_periods',
+    'get_finance_timeline',
   ],
   requireApproval: 'never' as const,
 };
@@ -127,7 +127,7 @@ export async function runWorkflowFromParts(
 
     if (financeAgentResult.images.length > 0) {
       console.log(
-        '🖼️ Extracted %d chart image(s) from get_expense_summary.',
+        '🖼️ Extracted %d chart image(s) from get_finance_summary.',
         financeAgentResult.images.length,
       );
     }

@@ -20,6 +20,7 @@ from .crud import (
     get_total_expense_for_categories,
     list_categories,
 )
+from .models import BillType
 from .database import init_database, session_scope
 from .schemas import (
     BillBatchRecordResult,
@@ -225,13 +226,17 @@ async def record_multiple_bills(
 
 
 @mcp.tool(
-    name="get_expense_summary",
+    name="get_finance_summary",
     description=(
-        "获取指定周期内的消费统计（总支出、分类开销、图表等）。"
+        "获取指定类型账单在给定周期内的统计信息（总金额、分类占比与图表等）。"
     ),
     structured_output=True,
 )
-async def get_expense_summary(
+async def get_finance_summary(
+    type: Annotated[
+        Literal["expense", "income"],
+        PydanticField(description="账单类型，可选值为 expense 或 income。"),
+    ],
     period: Annotated[
         Literal["day", "week", "month", "year"],
         PydanticField(
@@ -249,9 +254,10 @@ async def get_expense_summary(
     ],
     ctx: Context | None = None,
 ) -> ExpenseSummaryResult:
-    """查询指定时间范围内的消费统计."""
+    """查询指定时间范围内的账单统计信息."""
 
     user_id = require_user_id(ctx)
+    bill_type = BillType(type)
 
     try:
         start, end, label = parse_period(period, reference)
@@ -261,8 +267,12 @@ async def get_expense_summary(
     try:
         with session_scope() as session:
             ensure_default_categories(session, user_id)
-            total_expense = get_total_expense(session, start, end, user_id)
-            breakdown = get_expense_summary_by_category(session, start, end, user_id)
+            total_expense = get_total_expense(
+                session, start, end, user_id, bill_type=bill_type
+            )
+            breakdown = get_expense_summary_by_category(
+                session, start, end, user_id, bill_type=bill_type
+            )
             breakdown_models = [
                 CategoryExpenseBreakdown.model_validate(category_breakdown)
                 for category_breakdown in breakdown
@@ -273,7 +283,7 @@ async def get_expense_summary(
             try:
                 charts = generate_expense_summary_charts(breakdown_models, label)
             except (ValueError, CosConfigurationError) as exc:
-                logger.warning("生成消费图表失败: %s", exc)
+                logger.warning("生成账单图表失败: %s", exc)
 
         return ExpenseSummaryResult(
             period=period,
@@ -286,18 +296,22 @@ async def get_expense_summary(
             charts=charts,
         )
     except Exception as exc:  # noqa: BLE001
-        logger.exception("获取消费小结失败: %s", exc)
-        raise ValueError(f"获取消费小结失败：{exc}") from exc
+        logger.exception("获取账单小结失败: %s", exc)
+        raise ValueError(f"获取账单小结失败：{exc}") from exc
 
 
 @mcp.tool(
-    name="compare_expense_periods",
+    name="compare_finance_periods",
     description=(
-        "对比两个时间周期内的消费情况，支持按日、周、月、年进行对比。"
+        "对比两个时间周期内的账单情况，支持选择收入或支出，并按日、周、月、年进行对比。"
     ),
     structured_output=True,
 )
-async def compare_expense_periods(
+async def compare_finance_periods(
+    type: Annotated[
+        Literal["expense", "income"],
+        PydanticField(description="账单类型，可选值为 expense 或 income。"),
+    ],
     period: Annotated[
         Literal["day", "week", "month", "year"],
         PydanticField(description="统计粒度，可选值为 day、week、month、year。"),
@@ -329,9 +343,10 @@ async def compare_expense_periods(
     ] = None,
     ctx: Context | None = None,
 ) -> ExpenseComparisonResult:
-    """Compare expense summaries between two time periods."""
+    """Compare bill summaries between two time periods."""
 
     user_id = require_user_id(ctx)
+    bill_type = BillType(type)
 
     normalized_category_ids: list[int] | None = None
     if category_ids is not None:
@@ -353,6 +368,7 @@ async def compare_expense_periods(
                 first_end,
                 user_id,
                 normalized_category_ids,
+                bill_type=bill_type,
             )
             first_breakdown_raw = get_expense_summary_by_category(
                 session,
@@ -360,6 +376,7 @@ async def compare_expense_periods(
                 first_end,
                 user_id,
                 normalized_category_ids,
+                bill_type=bill_type,
             )
 
             second_total = get_total_expense(
@@ -368,6 +385,7 @@ async def compare_expense_periods(
                 second_end,
                 user_id,
                 normalized_category_ids,
+                bill_type=bill_type,
             )
             second_breakdown_raw = get_expense_summary_by_category(
                 session,
@@ -375,10 +393,11 @@ async def compare_expense_periods(
                 second_end,
                 user_id,
                 normalized_category_ids,
+                bill_type=bill_type,
             )
     except Exception as exc:  # noqa: BLE001
-        logger.exception("获取消费对比数据失败: %s", exc)
-        raise ValueError(f"获取消费对比数据失败：{exc}") from exc
+        logger.exception("获取账单对比数据失败: %s", exc)
+        raise ValueError(f"获取账单对比数据失败：{exc}") from exc
 
     try:
         first_breakdown = [
@@ -390,8 +409,8 @@ async def compare_expense_periods(
             for item in second_breakdown_raw
         ]
     except ValidationError as exc:
-        logger.exception("消费对比数据解析失败: %s", exc)
-        raise ValueError("消费对比数据格式不正确，请稍后重试。") from exc
+        logger.exception("账单对比数据解析失败: %s", exc)
+        raise ValueError("账单对比数据格式不正确，请稍后重试。") from exc
 
     try:
         first_snapshot = ExpenseComparisonSnapshot(
@@ -411,8 +430,8 @@ async def compare_expense_periods(
             category_breakdown=second_breakdown,
         )
     except ValidationError as exc:
-        logger.exception("消费对比快照构建失败: %s", exc)
-        raise ValueError("消费对比数据格式不正确，请稍后重试。") from exc
+        logger.exception("账单对比快照构建失败: %s", exc)
+        raise ValueError("账单对比数据格式不正确，请稍后重试。") from exc
 
     charts: list[ChartImage] = []
     if COS_BASE_URL:
@@ -424,7 +443,7 @@ async def compare_expense_periods(
                 second_label,
             )
         except (ValueError, CosConfigurationError) as exc:
-            logger.warning("生成消费对比图表失败: %s", exc)
+            logger.warning("生成账单对比图表失败: %s", exc)
 
     return ExpenseComparisonResult(
         period=period,
@@ -435,17 +454,21 @@ async def compare_expense_periods(
 
 
 @mcp.tool(
-    name="get_expense_timeline",
+    name="get_finance_timeline",
     description=(
-        "获取指定周期内的支出时间序列。"
+        "获取指定周期内的账单时间序列。"
         "支持按分类筛选、可指定统计颗粒度（支持 month、week、day），"
-        "可对两个不同周期的支出趋势进行对比。"
+        "可对两个不同周期的账单趋势进行对比。"
         "颗粒度表示时间分桶的单位，可选择“月”、“周”或“天”。"
-        "也支持传入一个或多个分类 ID，统计指定分类的支出变化。"
+        "也支持传入一个或多个分类 ID，统计指定分类的变化。"
     ),
     structured_output=True,
 )
-async def get_expense_timeline_tool(
+async def get_finance_timeline(
+    type: Annotated[
+        Literal["expense", "income"],
+        PydanticField(description="账单类型，可选值为 expense 或 income。"),
+    ],
     period: Annotated[
         Literal["year", "month", "week"],
         PydanticField(description="统计周期，可选值为 year、month、week。"),
@@ -467,7 +490,7 @@ async def get_expense_timeline_tool(
         list[int] | None,
         PydanticField(
             default=None,
-            description="需要统计的分类 ID 列表，留空则统计全部支出。可用于按多个分类细分支出趋势。",
+            description="需要统计的分类 ID 列表，留空则统计全部数据。可用于按多个分类细分趋势。",
         ),
     ] = None,
     comparison_reference: Annotated[
@@ -475,15 +498,16 @@ async def get_expense_timeline_tool(
         PydanticField(
             default=None,
             description=(
-                "可选的对比周期参考值，填写后可对比两个不同周期的支出趋势，如对比相邻两月、两周等。"
+                "可选的对比周期参考值，填写后可对比两个不同周期的账单趋势，如对比相邻两月、两周等。"
             ),
         ),
     ] = None,
     ctx: Context | None = None,
 ) -> ExpenseTimelineResult:
-    """获取指定周期（可选分类）的支出时间序列数据，支持指定颗粒度（日、周、月）与对比周期分析。"""
+    """获取指定周期（可选分类）的账单时间序列数据，支持指定颗粒度（日、周、月）与对比周期分析。"""
 
     user_id = require_user_id(ctx)
+    bill_type = BillType(type)
 
     category_id_list = unique_category_ids(category_ids or [])
 
@@ -537,14 +561,13 @@ async def get_expense_timeline_tool(
                 user_id,
                 granularity,
                 category_id_list,
+                bill_type=bill_type,
             )
             timeline_buckets = [
                 ExpenseTimelineBucket.model_validate(bucket)
                 for bucket in timeline_rows
             ]
-            total_expense = sum(
-                float(bucket.total_expense) for bucket in timeline_buckets
-            )
+            total_expense = sum(float(bucket.total_expense) for bucket in timeline_buckets)
 
             primary_snapshot = ExpenseTimelineSnapshot(
                 period=period,
@@ -569,6 +592,7 @@ async def get_expense_timeline_tool(
                     user_id,
                     granularity,
                     category_id_list,
+                    bill_type=bill_type,
                 )
                 comparison_buckets = [
                     ExpenseTimelineBucket.model_validate(bucket)
@@ -592,8 +616,8 @@ async def get_expense_timeline_tool(
     except ValueError:
         raise
     except Exception as exc:  # noqa: BLE001
-        logger.exception("获取支出时间序列失败: %s", exc)
-        raise ValueError(f"获取支出时间序列失败：{exc}") from exc
+        logger.exception("获取账单时间序列失败: %s", exc)
+        raise ValueError(f"获取账单时间序列失败：{exc}") from exc
 
     charts: list[ChartImage] = []
     if COS_BASE_URL:
@@ -606,7 +630,7 @@ async def get_expense_timeline_tool(
                 comparison_snapshot.resolved_label if comparison_snapshot else None,
             )
         except (ValueError, CosConfigurationError) as exc:
-            logger.warning("生成支出趋势图失败: %s", exc)
+            logger.warning("生成账单趋势图失败: %s", exc)
 
     return ExpenseTimelineResult(
         period=period,
@@ -618,13 +642,17 @@ async def get_expense_timeline_tool(
 
 
 @mcp.tool(
-    name="get_category_expense_detail",
+    name="get_category_finance_detail",
     description=(
-        "获取指定分类在某个周期内的消费明细（含总开销与金额排名前 20 的账单）。"
+        "获取指定分类在某个周期内的账单明细（含总金额与金额排名前 20 的账单）。"
     ),
     structured_output=True,
 )
-async def get_category_expense_detail(
+async def get_category_finance_detail(
+    type: Annotated[
+        Literal["expense", "income"],
+        PydanticField(description="账单类型，可选值为 expense 或 income。"),
+    ],
     period: Annotated[
         Literal["day", "week", "month", "year"],
         PydanticField(
@@ -650,9 +678,10 @@ async def get_category_expense_detail(
     ],
     ctx: Context | None = None,
 ) -> CategoryExpenseDetailResult:
-    """查询指定分类在某个时间范围内的消费明细."""
+    """查询指定分类在某个时间范围内的账单明细."""
 
     user_id = require_user_id(ctx)
+    bill_type = BillType(type)
     try:
         start, end, label = parse_period(period, reference)
     except ValueError as exc:
@@ -675,10 +704,10 @@ async def get_category_expense_detail(
                 CategoryRead.model_validate(category) for category in categories
             ]
             total_expense = get_total_expense_for_categories(
-                session, start, end, normalized_ids, user_id
+                session, start, end, normalized_ids, user_id, bill_type=bill_type
             )
             bills = get_category_filtered_expenses(
-                session, start, end, normalized_ids, user_id
+                session, start, end, normalized_ids, user_id, bill_type=bill_type
             )
 
             bill_details = [
@@ -706,8 +735,8 @@ async def get_category_expense_detail(
     except ValueError:
         raise
     except Exception as exc:  # noqa: BLE001
-        logger.exception("获取分类消费明细失败: %s", exc)
-        raise ValueError(f"获取分类消费明细失败：{exc}") from exc
+        logger.exception("获取分类账单明细失败: %s", exc)
+        raise ValueError(f"获取分类账单明细失败：{exc}") from exc
 
 
 def main() -> None:
