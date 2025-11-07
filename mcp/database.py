@@ -60,6 +60,7 @@ def _apply_user_id_migrations() -> None:
             _ensure_bill_user_columns(connection)
             _ensure_bill_asset_columns(connection)
             _ensure_bill_amount_columns(connection)
+            _ensure_bill_type_columns(connection)
 
 
 def _ensure_category_user_columns(connection) -> None:
@@ -269,6 +270,51 @@ def _ensure_bill_amount_columns(connection) -> None:
         connection.execute(
             text("ALTER TABLE bills MODIFY COLUMN target_amount FLOAT NOT NULL")
         )
+
+
+def _ensure_bill_type_columns(connection) -> None:
+    """确保账单表中的 type 字段支持所有枚举值."""
+
+    inspector = inspect(connection)
+    columns = inspector.get_columns("bills")
+    column_info = next((column for column in columns if column["name"] == "type"), None)
+    desired_length = 32
+
+    if column_info is None:
+        connection.execute(
+            text(
+                f"ALTER TABLE bills ADD COLUMN type VARCHAR({desired_length}) NOT NULL DEFAULT 'expense'"
+            )
+        )
+        connection.execute(
+            text("UPDATE bills SET type = 'expense' WHERE type IS NULL OR type = ''")
+        )
+        connection.execute(
+            text(
+                f"ALTER TABLE bills MODIFY COLUMN type VARCHAR({desired_length}) NOT NULL"
+            )
+        )
+        return
+
+    column_type = column_info.get("type")
+    current_length = getattr(column_type, "length", None)
+
+    needs_alter = False
+    if current_length is not None and current_length < desired_length:
+        needs_alter = True
+    elif connection.dialect.name.startswith("mysql") and column_type.__class__.__name__.lower() == "enum":
+        needs_alter = True
+
+    if needs_alter:
+        connection.execute(
+            text(
+                f"ALTER TABLE bills MODIFY COLUMN type VARCHAR({desired_length}) NOT NULL"
+            )
+        )
+
+    connection.execute(
+        text("UPDATE bills SET type = 'expense' WHERE type IS NULL OR type = ''")
+    )
 
 
 def _get_asset_id(connection, name: str) -> int | None:
