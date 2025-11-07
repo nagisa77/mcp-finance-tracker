@@ -59,6 +59,12 @@ DEFAULT_CATEGORIES = [
         "type": "expense",
     },
     {
+        "name": "买菜做饭",
+        "description": "购买食材与日常烹饪相关的支出",
+        "color": "#A0D2DB",
+        "type": "expense",
+    },
+    {
         "name": "生活用品",
         "description": "日常生活用品的消费，如洗衣液、纸巾等",
         "color": "#88C0D0",
