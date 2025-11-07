@@ -15,6 +15,7 @@ class CategoryRead(BaseModel):
     name: str
     description: Optional[str] = None
     color: str
+    type: BillType
 
     class Config:
         from_attributes = True

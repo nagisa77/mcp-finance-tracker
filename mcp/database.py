@@ -52,6 +52,7 @@ def _apply_user_id_migrations() -> None:
         if "categories" in table_names:
             _ensure_category_user_columns(connection)
             _ensure_category_color_columns(connection)
+            _ensure_category_type_columns(connection)
         if "bills" in table_names:
             _ensure_bill_user_columns(connection)
 
@@ -163,6 +164,31 @@ def _ensure_category_color_columns(connection) -> None:
             text("ALTER TABLE categories MODIFY COLUMN color VARCHAR(7) NOT NULL")
         )
 
+
+def _ensure_category_type_columns(connection) -> None:
+    """为分类表添加类型字段并填充默认值."""
+
+    inspector = inspect(connection)
+    columns = {col["name"] for col in inspector.get_columns("categories")}
+    if "type" not in columns:
+        connection.execute(text("ALTER TABLE categories ADD COLUMN type VARCHAR(16)"))
+        inspector = inspect(connection)
+
+    connection.execute(
+        text(
+            "UPDATE categories SET type = 'expense' "
+            "WHERE type IS NULL OR type = ''"
+        )
+    )
+
+    dialect_name = connection.dialect.name
+    if dialect_name.startswith("mysql"):
+        connection.execute(
+            text(
+                "ALTER TABLE categories "
+                "MODIFY COLUMN type VARCHAR(16) NOT NULL DEFAULT 'expense'"
+            )
+        )
 def _ensure_bill_user_columns(connection) -> None:
     """为账单表添加 user_id 相关结构."""
 
