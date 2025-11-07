@@ -43,11 +43,6 @@ class BillCreate(BaseModel):
         ge=1,
         description="目标资产 ID，未提供时默认使用人民币资产。",
     )
-    source_amount: Optional[float] = Field(
-        default=None,
-        gt=0,
-        description="源资产减少的数量，未提供时与金额相同。",
-    )
     target_amount: Optional[float] = Field(
         default=None,
         gt=0,
@@ -75,7 +70,7 @@ class BillCreate(BaseModel):
             raise ValueError("资产 ID 必须为正整数")
         return value
 
-    @field_validator("source_amount", "target_amount")
+    @field_validator("target_amount")
     @classmethod
     def asset_amount_must_be_positive(cls, value: Optional[float]) -> Optional[float]:
         if value is not None and value <= 0:
@@ -107,7 +102,6 @@ class BillRead(BaseModel):
     )
     source_asset_id: int = Field(description="源资产 ID。")
     target_asset_id: int = Field(description="目标资产 ID。")
-    source_amount: float = Field(description="源资产减少的数量。")
     target_amount: float = Field(description="目标资产增加的数量。")
 
     class Config:
@@ -121,7 +115,6 @@ class InvestmentRecordCreate(BaseModel):
         description="操作类型：invest 表示投资，profit 表示获利。",
     )
     source_asset_id: int = Field(ge=1, description="源资产 ID。")
-    source_amount: float = Field(gt=0, description="源资产减少的数量。")
     target_asset_id: int = Field(ge=1, description="目标资产 ID。")
     target_amount: float = Field(gt=0, description="目标资产增加的数量。")
     description: Optional[str] = Field(default=None, description="记录的备注信息。")

@@ -125,7 +125,6 @@ class Bill(Base):
     category: Mapped[Optional[Category]] = relationship(back_populates="bills")
     source_asset_id: Mapped[int] = mapped_column(ForeignKey("assets.id"), nullable=False)
     target_asset_id: Mapped[int] = mapped_column(ForeignKey("assets.id"), nullable=False)
-    source_amount: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     target_amount: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     source_asset: Mapped[Asset] = relationship(
         back_populates="source_bills",
