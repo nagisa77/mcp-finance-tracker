@@ -26,13 +26,33 @@ class BillCreate(BaseModel):
 
     amount: float = Field(..., gt=0, description="金额，必须为正数")
     type: BillType = Field(
-        ..., description="账单类型，可选值为 income 或 expense"
+        ..., description="账单类型，可选值为 income、expense 或 investment"
     )
     category_id: Optional[int] = Field(
         default=None,
         description="分类 ID，未提供时记为未分类",
     )
     description: Optional[str] = Field(default=None, description="账单描述")
+    source_asset_id: Optional[int] = Field(
+        default=None,
+        ge=1,
+        description="源资产 ID，未提供时默认使用人民币资产。",
+    )
+    target_asset_id: Optional[int] = Field(
+        default=None,
+        ge=1,
+        description="目标资产 ID，未提供时默认使用人民币资产。",
+    )
+    source_amount: Optional[float] = Field(
+        default=None,
+        gt=0,
+        description="源资产减少的数量，未提供时与金额相同。",
+    )
+    target_amount: Optional[float] = Field(
+        default=None,
+        gt=0,
+        description="目标资产增加的数量，未提供时与金额相同。",
+    )
 
     @field_validator("amount")
     @classmethod
@@ -46,6 +66,20 @@ class BillCreate(BaseModel):
     def category_id_must_be_positive(cls, value: Optional[int]) -> Optional[int]:
         if value is not None and value <= 0:
             raise ValueError("分类 ID 必须为正整数")
+        return value
+
+    @field_validator("source_asset_id", "target_asset_id")
+    @classmethod
+    def asset_id_must_be_positive(cls, value: Optional[int]) -> Optional[int]:
+        if value is not None and value <= 0:
+            raise ValueError("资产 ID 必须为正整数")
+        return value
+
+    @field_validator("source_amount", "target_amount")
+    @classmethod
+    def asset_amount_must_be_positive(cls, value: Optional[float]) -> Optional[float]:
+        if value is not None and value <= 0:
+            raise ValueError("资产变动数量必须为正数")
         return value
 
 class CategoryListResult(BaseModel):
@@ -71,9 +105,26 @@ class BillRead(BaseModel):
     category: Optional[CategoryRead] = Field(
         default=None, description="Category associated with the bill, if any."
     )
+    source_asset_id: int = Field(description="源资产 ID。")
+    target_asset_id: int = Field(description="目标资产 ID。")
+    source_amount: float = Field(description="源资产减少的数量。")
+    target_amount: float = Field(description="目标资产增加的数量。")
 
     class Config:
         from_attributes = True
+
+
+class InvestmentRecordCreate(BaseModel):
+    """资产投资或获利记录输入模型."""
+
+    mode: Literal["invest", "profit"] = Field(
+        description="操作类型：invest 表示投资，profit 表示获利。",
+    )
+    source_asset_id: int = Field(ge=1, description="源资产 ID。")
+    source_amount: float = Field(gt=0, description="源资产减少的数量。")
+    target_asset_id: int = Field(ge=1, description="目标资产 ID。")
+    target_amount: float = Field(gt=0, description="目标资产增加的数量。")
+    description: Optional[str] = Field(default=None, description="记录的备注信息。")
 
 
 class BillRecordResult(BaseModel):

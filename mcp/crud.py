@@ -5,9 +5,50 @@ from typing import Iterable, List, Literal, Optional
 from sqlalchemy import Select, asc, desc, func, select
 from sqlalchemy.orm import Session
 
-from .config import DEFAULT_CATEGORIES, UNCATEGORIZED_CATEGORY_COLOR
-from .models import Bill, BillType, Category, CategoryType
+from .config import DEFAULT_ASSETS, DEFAULT_CATEGORIES, UNCATEGORIZED_CATEGORY_COLOR
+from .models import Asset, Bill, BillType, Category, CategoryType
 from .schemas import BillCreate
+
+
+def ensure_default_assets(session: Session) -> None:
+    """确保默认资产存在."""
+
+    existing_assets = {
+        asset.name: asset
+        for asset in session.scalars(select(Asset).order_by(asc(Asset.id))).all()
+    }
+    for asset in DEFAULT_ASSETS:
+        name = asset["name"].strip()
+        if not name:
+            continue
+        existing = existing_assets.get(name)
+        if existing is None:
+            session.add(
+                Asset(
+                    name=name,
+                    description=asset.get("description"),
+                )
+            )
+            continue
+
+        description = asset.get("description")
+        if description is not None and existing.description != description:
+            existing.description = description
+            session.add(existing)
+
+
+def get_asset_by_name(session: Session, name: str) -> Asset | None:
+    """根据名称获取资产."""
+
+    stmt = select(Asset).where(Asset.name == name)
+    return session.scalars(stmt).first()
+
+
+def get_asset_by_id(session: Session, asset_id: int) -> Asset | None:
+    """根据 ID 获取资产."""
+
+    stmt = select(Asset).where(Asset.id == asset_id)
+    return session.scalars(stmt).first()
 
 
 def ensure_default_categories(session: Session, user_id: str) -> None:
@@ -117,12 +158,22 @@ def create_bill(
     if category is not None and category.type != CategoryType(bill_type.value):
         raise ValueError("所选分类类型与账单类型不匹配")
 
+    if data.source_asset_id is None or data.target_asset_id is None:
+        raise ValueError("记录账单时必须指定源资产与目标资产")
+
+    source_amount = data.source_amount if data.source_amount is not None else data.amount
+    target_amount = data.target_amount if data.target_amount is not None else data.amount
+
     bill = Bill(
         user_id=user_id,
         amount=data.amount,
         type=bill_type,
         description=data.description,
         category=category,
+        source_asset_id=data.source_asset_id,
+        target_asset_id=data.target_asset_id,
+        source_amount=source_amount,
+        target_amount=target_amount,
     )
     session.add(bill)
     session.flush()

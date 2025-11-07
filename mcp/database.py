@@ -37,8 +37,11 @@ def session_scope() -> Iterator[Session]:
 def init_database() -> None:
     """初始化数据库结构."""
     from .models import Base  # noqa: WPS433 - 延迟导入以避免循环依赖
+    from .crud import ensure_default_assets  # noqa: WPS433
 
     Base.metadata.create_all(bind=engine)
+    with session_scope() as session:
+        ensure_default_assets(session)
     _apply_user_id_migrations()
 
 
@@ -55,6 +58,8 @@ def _apply_user_id_migrations() -> None:
             _ensure_category_color_columns(connection)
         if "bills" in table_names:
             _ensure_bill_user_columns(connection)
+            _ensure_bill_asset_columns(connection)
+            _ensure_bill_amount_columns(connection)
 
 
 def _ensure_category_user_columns(connection) -> None:
@@ -198,6 +203,93 @@ def _ensure_category_color_columns(connection) -> None:
         connection.execute(
             text("ALTER TABLE categories MODIFY COLUMN color VARCHAR(7) NOT NULL")
         )
+
+
+def _ensure_bill_asset_columns(connection) -> None:
+    """确保账单表包含资产字段并填充默认值."""
+
+    inspector = inspect(connection)
+    columns = {col["name"] for col in inspector.get_columns("bills")}
+
+    if "source_asset_id" not in columns:
+        connection.execute(text("ALTER TABLE bills ADD COLUMN source_asset_id INTEGER"))
+        inspector = inspect(connection)
+        columns = {col["name"] for col in inspector.get_columns("bills")}
+
+    if "target_asset_id" not in columns:
+        connection.execute(text("ALTER TABLE bills ADD COLUMN target_asset_id INTEGER"))
+
+    cny_asset_id = _get_asset_id(connection, "CNY")
+    if cny_asset_id is not None:
+        connection.execute(
+            text(
+                "UPDATE bills SET source_asset_id = :asset_id "
+                "WHERE source_asset_id IS NULL"
+            ),
+            {"asset_id": cny_asset_id},
+        )
+        connection.execute(
+            text(
+                "UPDATE bills SET target_asset_id = :asset_id "
+                "WHERE target_asset_id IS NULL"
+            ),
+            {"asset_id": cny_asset_id},
+        )
+
+    dialect_name = connection.dialect.name
+    if dialect_name.startswith("mysql"):
+        connection.execute(
+            text("ALTER TABLE bills MODIFY COLUMN source_asset_id INTEGER NOT NULL")
+        )
+        connection.execute(
+            text("ALTER TABLE bills MODIFY COLUMN target_asset_id INTEGER NOT NULL")
+        )
+
+
+def _ensure_bill_amount_columns(connection) -> None:
+    """确保账单表包含资产数量字段并填充默认值."""
+
+    inspector = inspect(connection)
+    columns = {col["name"] for col in inspector.get_columns("bills")}
+
+    if "source_amount" not in columns:
+        connection.execute(text("ALTER TABLE bills ADD COLUMN source_amount FLOAT"))
+    if "target_amount" not in columns:
+        connection.execute(text("ALTER TABLE bills ADD COLUMN target_amount FLOAT"))
+
+    connection.execute(
+        text(
+            "UPDATE bills SET source_amount = amount "
+            "WHERE source_amount IS NULL"
+        )
+    )
+    connection.execute(
+        text(
+            "UPDATE bills SET target_amount = amount "
+            "WHERE target_amount IS NULL"
+        )
+    )
+
+    dialect_name = connection.dialect.name
+    if dialect_name.startswith("mysql"):
+        connection.execute(
+            text("ALTER TABLE bills MODIFY COLUMN source_amount FLOAT NOT NULL")
+        )
+        connection.execute(
+            text("ALTER TABLE bills MODIFY COLUMN target_amount FLOAT NOT NULL")
+        )
+
+
+def _get_asset_id(connection, name: str) -> int | None:
+    """获取指定名称的资产 ID."""
+
+    result = connection.execute(
+        text("SELECT id FROM assets WHERE name = :name"),
+        {"name": name},
+    ).first()
+    if result:
+        return int(result[0])
+    return None
 
 def _ensure_bill_user_columns(connection) -> None:
     """为账单表添加 user_id 相关结构."""
