@@ -4,7 +4,7 @@ from typing import List, Literal, Optional
 
 from pydantic import BaseModel, Field, field_validator
 
-from .models import BillType
+from .models import BillType, CategoryType
 
 
 class CategoryRead(BaseModel):
@@ -15,6 +15,7 @@ class CategoryRead(BaseModel):
     name: str
     description: Optional[str] = None
     color: str
+    type: CategoryType
 
     class Config:
         from_attributes = True
