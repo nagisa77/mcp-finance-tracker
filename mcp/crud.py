@@ -6,7 +6,7 @@ from sqlalchemy import Select, asc, desc, func, select
 from sqlalchemy.orm import Session
 
 from .config import DEFAULT_CATEGORIES, UNCATEGORIZED_CATEGORY_COLOR
-from .models import Bill, BillType, Category
+from .models import Bill, BillType, Category, CategoryType
 from .schemas import BillCreate
 
 
@@ -14,15 +14,25 @@ def ensure_default_categories(session: Session, user_id: str) -> None:
     """确保默认分类存在."""
 
     existing_categories = {
-        category.name: category
+        (category.name, category.type): category
         for category in session.scalars(
             select(Category).where(Category.user_id == user_id)
         ).all()
     }
     for category in DEFAULT_CATEGORIES:
-        existing = existing_categories.get(category["name"])
+        category_type = CategoryType(category.get("type", CategoryType.EXPENSE))
+        key = (category["name"], category_type)
+        existing = existing_categories.get(key)
         if existing is None:
-            session.add(Category(user_id=user_id, **category))
+            session.add(
+                Category(
+                    user_id=user_id,
+                    name=category["name"],
+                    description=category.get("description"),
+                    color=category.get("color", "#5E81AC"),
+                    type=category_type,
+                )
+            )
             continue
 
         updated = False
@@ -31,6 +41,9 @@ def ensure_default_categories(session: Session, user_id: str) -> None:
             updated = True
         if category.get("color") and existing.color != category["color"]:
             existing.color = category["color"]
+            updated = True
+        if existing.type != category_type:
+            existing.type = category_type
             updated = True
         if updated:
             session.add(existing)
@@ -67,13 +80,18 @@ def get_categories_by_ids(
 
 
 def get_category_by_name(
-    session: Session, name: str, user_id: str
+    session: Session,
+    name: str,
+    user_id: str,
+    category_type: CategoryType | None = None,
 ) -> Optional[Category]:
     """根据名称获取分类."""
     stmt = select(Category).where(
         Category.user_id == user_id,
         Category.name == name,
     )
+    if category_type is not None:
+        stmt = stmt.where(Category.type == category_type)
     return session.scalars(stmt).first()
 
 
@@ -95,10 +113,14 @@ def create_bill(
     user_id: str,
 ) -> Bill:
     """创建账单记录."""
+    bill_type = BillType(data.type)
+    if category is not None and category.type != CategoryType(bill_type.value):
+        raise ValueError("所选分类类型与账单类型不匹配")
+
     bill = Bill(
         user_id=user_id,
         amount=data.amount,
-        type=BillType(data.type),
+        type=bill_type,
         description=data.description,
         category=category,
     )
