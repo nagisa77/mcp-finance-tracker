@@ -50,7 +50,6 @@ def _apply_user_id_migrations() -> None:
         table_names = set(inspector.get_table_names())
 
         if "categories" in table_names:
-            _ensure_category_type_columns(connection)
             _ensure_category_user_columns(connection)
             _ensure_category_color_columns(connection)
         if "bills" in table_names:
@@ -75,35 +74,21 @@ def _ensure_category_user_columns(connection) -> None:
 
     inspector = inspect(connection)
     indexes = inspector.get_indexes("categories")
-    desired_columns = ["user_id", "name"]
-    unique_name = "uq_category_user_name"
-    if "type" in columns:
-        desired_columns = ["user_id", "name", "type"]
-        unique_name = "uq_category_user_name_type"
-
-    for index in list(indexes):
-        if not index.get("unique"):
-            continue
-        column_names = index.get("column_names") or []
-        if column_names == desired_columns and index.get("name") == unique_name:
-            continue
-        connection.execute(
-            text(f"ALTER TABLE categories DROP INDEX `{index['name']}`")
-        )
+    for index in indexes:
+        if index.get("unique") and index.get("column_names") == ["name"]:
+            connection.execute(
+                text(
+                    f"ALTER TABLE categories DROP INDEX `{index['name']}`"
+                )
+            )
 
     inspector = inspect(connection)
     indexes = inspector.get_indexes("categories")
-    if not any(
-        index.get("unique")
-        and index.get("name") == unique_name
-        and (index.get("column_names") or []) == desired_columns
-        for index in indexes
-    ):
-        columns_expr = ", ".join(desired_columns)
+    if not any(index.get("unique") and index.get("name") == "uq_category_user_name" for index in indexes):
         connection.execute(
             text(
                 "ALTER TABLE categories ADD UNIQUE INDEX "
-                f"{unique_name} ({columns_expr})"
+                "uq_category_user_name (user_id, name)"
             )
         )
 
@@ -111,27 +96,6 @@ def _ensure_category_user_columns(connection) -> None:
         connection.execute(
             text("CREATE INDEX ix_categories_user_id ON categories (user_id)")
         )
-
-
-def _ensure_category_type_columns(connection) -> None:
-    """为分类表添加类型字段并设置默认值."""
-
-    inspector = inspect(connection)
-    columns = {col["name"] for col in inspector.get_columns("categories")}
-    if "type" not in columns:
-        connection.execute(text("ALTER TABLE categories ADD COLUMN type VARCHAR(16)"))
-        inspector = inspect(connection)
-        columns = {col["name"] for col in inspector.get_columns("categories")}
-
-    connection.execute(
-        text(
-            "UPDATE categories SET type = 'expense' "
-            "WHERE type IS NULL OR type = ''"
-        )
-    )
-    connection.execute(
-        text("ALTER TABLE categories MODIFY COLUMN type VARCHAR(16) NOT NULL")
-    )
 
 
 def _ensure_category_color_columns(connection) -> None:
