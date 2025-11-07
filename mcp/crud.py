@@ -136,8 +136,9 @@ def get_expense_summary_by_category(
     end: datetime,
     user_id: str,
     category_ids: Iterable[int] | None = None,
+    bill_type: BillType = BillType.EXPENSE,
 ) -> list[dict[str, object]]:
-    """在指定时间区间内按分类统计支出."""
+    """在指定时间区间内按分类统计账单金额."""
 
     stmt: Select = (
         select(
@@ -148,7 +149,7 @@ def get_expense_summary_by_category(
         )
         .join(Category, Bill.category_id == Category.id, isouter=True)
         .where(
-            Bill.type == BillType.EXPENSE,
+            Bill.type == bill_type,
             Bill.created_at >= start,
             Bill.created_at < end,
             Bill.user_id == user_id,
@@ -191,13 +192,14 @@ def get_total_expense(
     end: datetime,
     user_id: str,
     category_ids: Iterable[int] | None = None,
+    bill_type: BillType = BillType.EXPENSE,
 ) -> float:
-    """统计指定时间区间内的总支出."""
+    """统计指定时间区间内的账单总金额."""
 
     total_stmt: Select = (
         select(func.coalesce(func.sum(Bill.amount), 0))
         .where(
-            Bill.type == BillType.EXPENSE,
+            Bill.type == bill_type,
             Bill.created_at >= start,
             Bill.created_at < end,
             Bill.user_id == user_id,
@@ -218,8 +220,9 @@ def get_category_filtered_expenses(
     category_ids: Iterable[int],
     user_id: str,
     limit: int = 20,
+    bill_type: BillType = BillType.EXPENSE,
 ) -> list[Bill]:
-    """获取指定分类下的消费账单，按金额倒序排列."""
+    """获取指定分类下的账单，按金额倒序排列."""
 
     category_id_list = list(category_ids)
     if not category_id_list:
@@ -228,7 +231,7 @@ def get_category_filtered_expenses(
     stmt: Select = (
         select(Bill)
         .where(
-            Bill.type == BillType.EXPENSE,
+            Bill.type == bill_type,
             Bill.created_at >= start,
             Bill.created_at < end,
             Bill.category_id.in_(category_id_list),
@@ -246,8 +249,9 @@ def get_total_expense_for_categories(
     end: datetime,
     category_ids: Iterable[int],
     user_id: str,
+    bill_type: BillType = BillType.EXPENSE,
 ) -> float:
-    """统计指定分类下的总支出."""
+    """统计指定分类下的账单总金额."""
 
     category_id_list = list(category_ids)
     if not category_id_list:
@@ -256,7 +260,7 @@ def get_total_expense_for_categories(
     total_stmt: Select = (
         select(func.coalesce(func.sum(Bill.amount), 0))
         .where(
-            Bill.type == BillType.EXPENSE,
+            Bill.type == bill_type,
             Bill.created_at >= start,
             Bill.created_at < end,
             Bill.category_id.in_(category_id_list),
@@ -273,15 +277,16 @@ def get_expense_timeline(
     user_id: str,
     granularity: Literal["month", "week", "day"],
     category_ids: Iterable[int] | None = None,
+    bill_type: BillType = BillType.EXPENSE,
 ) -> list[dict[str, object]]:
-    """Aggregate expenses into ordered time buckets for the given granularity."""
+    """Aggregate bill amounts into ordered time buckets for the given granularity."""
 
     category_id_list = list(category_ids or [])
 
     stmt: Select = (
         select(Bill.created_at, Bill.amount)
         .where(
-            Bill.type == BillType.EXPENSE,
+            Bill.type == bill_type,
             Bill.created_at >= start,
             Bill.created_at < end,
             Bill.user_id == user_id,
