@@ -202,12 +202,12 @@ async def record_multiple_bills(
             cny_asset = get_asset_by_name(session, "CNY")
             if cny_asset is None:
                 raise ValueError("未找到默认人民币资产，请先初始化资产列表。")
-            bill_models: list[BillRead] = []
+            bill_models: list[BillRecordResult] = []
             failed_records: list[str] = []
 
             for index, bill in enumerate(bills, start=1):
                 try:
-                    category_obj, _ = resolve_category(
+                    category_obj, category_display = resolve_category(
                         session, bill.category_id, user_id
                     )
                     enriched_bill = bill.model_copy(
@@ -223,7 +223,13 @@ async def record_multiple_bills(
                         category_obj,
                         user_id,
                     )
-                    bill_models.append(BillRead.model_validate(created_bill))
+                    bill_models.append(
+                        BillRecordResult(
+                            message="💾 账单记录成功！",
+                            category_display=category_display,
+                            bill=BillRead.model_validate(created_bill),
+                        )
+                    )
                 except ValidationError as exc:
                     logger.warning("第 %s 条账单校验失败: %s", index, exc)
                     failed_records.append(
